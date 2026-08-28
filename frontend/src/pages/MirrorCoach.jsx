@@ -1,269 +1,381 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Sparkles, Shield, Camera, Mic, Type, Play, X, BarChart2, FolderOpen, 
-  Target, Clock, Settings, LogOut, Loader2, Award, Zap, AlertCircle, ArrowRight, VideoOff 
+import {
+  Sparkles, Camera, Mic, BarChart2, FolderOpen,
+  Target, Clock, Settings, Loader2, VideoOff, Upload, Volume2, VolumeX, RotateCcw
 } from 'lucide-react';
 import api from '../utils/api';
 import Waveform from '../components/Waveform';
+import { timeOfDayGreeting } from '../utils/greeting';
+import { sampleFrameMetrics, deriveVisualMetrics } from '../utils/visualSignals';
+
+const SESSION_MODES = [
+  'Practice',
+  'Interview',
+  'Presentation',
+  'Project',
+  'Viva',
+  'Communication',
+  'Custom'
+];
+
+const DIFFICULTIES = ['Beginner', 'Intermediate', 'Advanced'];
+
+function parseMaybe(value, fallback) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
 
 const MirrorCoach = ({ user, handleLogout }) => {
   const navigate = useNavigate();
-  // Session lifecycle states: 'setup', 'profile', 'live', 'report'
-  const [stage, setStage] = useState('setup'); 
+  const [stage, setStage] = useState('setup');
+  const stageRef = useRef('setup');
+  useEffect(() => { stageRef.current = stage; }, [stage]);
   const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(''); // Uploading, Processing, Understanding
+  const [loadingStep, setLoadingStep] = useState('');
+  const [errorBanner, setErrorBanner] = useState('');
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [report, setReport] = useState(null);
 
-  // Setup options
-  const [prepType, setPrepType] = useState('Technical Interview');
+  const [prepType, setPrepType] = useState('');
+  const [sessionMode, setSessionMode] = useState('Practice');
+  const [difficulty, setDifficulty] = useState('Intermediate');
   const [pastedText, setPastedText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
 
-  // Live session state
-  const [dialogHistory, setDialogHistory] = useState([]); // Questions + answers dialog
+  const [dialogHistory, setDialogHistory] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [avaRemark, setAvaRemark] = useState("Let's get started.");
+  const [avaRemark, setAvaRemark] = useState("Let's practice.");
+  const [lastFeedback, setLastFeedback] = useState(null);
+  const [sessionState, setSessionState] = useState(null);
   const [userAnswerText, setUserAnswerText] = useState('');
-  const [inputMode, setInputMode] = useState('text'); // voice | text
+  const [inputMode, setInputMode] = useState('text');
+  const [avaStatus, setAvaStatus] = useState('Listening');
 
-  // Permission requests
   const [useVoice, setUseVoice] = useState(true);
-  const [useCamera, setUseCamera] = useState(false);
+  const [wantCamera, setWantCamera] = useState(false);
   const [permissionPromptOpen, setPermissionPromptOpen] = useState(false);
 
-  // Camera preview stream ref
   const videoRef = useRef(null);
-  const [cameraStream, setCameraStream] = useState(null);
-  const [gazeShiftsCount, setGazeShiftsCount] = useState(0);
+  const canvasRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const visualSamplesRef = useRef([]);
+  const visualTimerRef = useRef(null);
+  const [cameraStatus, setCameraStatus] = useState('CAMERA NOT CONNECTED');
+  const [cameraNote, setCameraNote] = useState('');
+  const [visualMetrics, setVisualMetrics] = useState(null);
 
-  // Voice recording ref
   const recognitionRef = useRef(null);
+  const speechBaseRef = useRef('');
+  const [micStatus, setMicStatus] = useState('MICROPHONE OFF');
   const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Mock prep list
-  const prepTypesList = [
-    'Job Interview', 'Technical Interview', 'HR Interview', 
-    'Hackathon Presentation', 'Project Presentation', 'Viva', 
-    'Exam', 'Public Speaking', 'Client Meeting', 'Team Meeting', 
-    'Technical Discussion', 'Custom Preparation'
-  ];
+  const [ttsMuted, setTtsMuted] = useState(false);
+  const [lastSpoken, setLastSpoken] = useState('');
+  const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
-  // Initialize Speech recognition hook
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-US';
-
-      rec.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        setUserAnswerText(prev => prev + ' ' + (finalTranscript || interimTranscript));
-      };
-
-      rec.onerror = (e) => {
-        console.error('Speech recognition error:', e);
-        setIsRecording(false);
-      };
-
-      rec.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognitionRef.current = rec;
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return undefined;
     }
+    setSpeechSupported(true);
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+
+    rec.onresult = (event) => {
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          speechBaseRef.current = `${speechBaseRef.current} ${piece}`.trim();
+        } else {
+          interimTranscript += piece;
+        }
+      }
+      const next = `${speechBaseRef.current} ${interimTranscript}`.trim();
+      setUserAnswerText(next);
+      if (stageRef.current === 'setup') setPrepType(next);
+      setInputMode('voice');
+    };
+
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        setMicStatus('MICROPHONE OFF');
+        setErrorBanner('Microphone access is unavailable. You can type instead.');
+      } else if (e.error !== 'aborted') {
+        setErrorBanner("Couldn't understand the audio. Please try again or type your response.");
+      }
+      setIsRecording(false);
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+      setMicStatus((prev) => (prev === 'LISTENING' ? 'MICROPHONE ACTIVE' : prev));
+    };
+
+    recognitionRef.current = rec;
+    return () => {
+      try { rec.abort(); } catch { /* ignore */ }
+    };
   }, []);
 
-  // Control camera feed
-  useEffect(() => {
-    if (stage === 'live' && useCamera && videoRef.current) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then((stream) => {
-          setCameraStream(stream);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-          // Simulate observable presentation signals: shift gaze tracking randomly for realistic telemetry
-          const interval = setInterval(() => {
-            if (Math.random() > 0.75) {
-              setGazeShiftsCount(prev => prev + 1);
-            }
-          }, 3500);
-          return () => clearInterval(interval);
-        })
-        .catch((err) => {
-          console.error("Camera access failed:", err);
-          setUseCamera(false);
-        });
-    } else {
-      stopCamera();
+  const stopCamera = useCallback(() => {
+    if (visualTimerRef.current) {
+      clearInterval(visualTimerRef.current);
+      visualTimerRef.current = null;
     }
-    return () => stopCamera();
-  }, [stage, useCamera]);
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
 
-  const stopCamera = () => {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
+  const startVisualSampling = useCallback(() => {
+    if (visualTimerRef.current) clearInterval(visualTimerRef.current);
+    visualSamplesRef.current = [];
+    visualTimerRef.current = setInterval(() => {
+      if (!canvasRef.current || !videoRef.current) return;
+      const sample = sampleFrameMetrics(videoRef.current, canvasRef.current);
+      if (!sample) return;
+      visualSamplesRef.current = [...visualSamplesRef.current.slice(-24), sample];
+      setVisualMetrics(deriveVisualMetrics(visualSamplesRef.current));
+    }, 2000);
+  }, []);
+
+  const requestCamera = useCallback(async () => {
+    setCameraStatus('CAMERA REQUESTED');
+    setCameraNote('Camera is used only to provide communication coaching based on visible interaction signals.');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      cameraStreamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraStatus('CAMERA ACTIVE');
+      setCameraNote('');
+      startVisualSampling();
+    } catch {
+      setCameraStatus('CAMERA DENIED');
+      setCameraNote('Camera access is unavailable. Mirror AI will continue without visual coaching.');
+      setWantCamera(false);
     }
-  };
+  }, [startVisualSampling]);
+
+  useEffect(() => {
+    if (stage === 'live' && wantCamera) {
+      requestCamera();
+    }
+    if (stage !== 'live') {
+      stopCamera();
+      if (stage !== 'report') setCameraStatus('CAMERA NOT CONNECTED');
+    }
+    return () => {};
+  }, [stage, wantCamera, requestCamera, stopCamera]);
+
+  useEffect(() => () => {
+    stopCamera();
+    try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+    if (ttsSupported) window.speechSynthesis.cancel();
+  }, [stopCamera, ttsSupported]);
+
+  const speakAva = useCallback((text) => {
+    const spoken = String(text || '').trim();
+    if (!spoken) return;
+    setLastSpoken(spoken);
+    if (!ttsSupported || ttsMuted) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(spoken);
+    utter.onstart = () => setAvaStatus('Speaking');
+    utter.onend = () => setAvaStatus('Listening');
+    window.speechSynthesis.speak(utter);
+  }, [ttsMuted, ttsSupported]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setSelectedFile(file);
-      setPastedText(`[Uploaded File: ${file.name}]`);
-    }
+    if (file) setSelectedFile(file);
   };
 
-  // Submit prep files & extract profile
-  const handleProcessMaterial = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const steps = ['Uploading...', 'Processing...', 'Understanding...'];
-    let stepIndex = 0;
-    setLoadingStep(steps[0]);
-
-    const interval = setInterval(() => {
-      if (stepIndex < steps.length - 1) {
-        stepIndex++;
-        setLoadingStep(steps[stepIndex]);
-      }
-    }, 1200);
-
-    try {
-      const response = await api.post('/mirror/sessions', {
-        prep_type: prepType,
-        pasted_text: pastedText || `Preparation for ${prepType}`
-      });
-
-      clearInterval(interval);
-      setLoadingStep('Preparation profile ready ✓');
-      setTimeout(() => {
-        setSession(response.data.session);
-        setProfile(response.data.profile);
-        setCurrentQuestion(response.data.initial_question);
-        setStage('profile');
-        setLoading(false);
-      }, 800);
-
-    } catch (err) {
-      clearInterval(interval);
-      alert('Failed to parse material: ' + (err.response?.data?.error || err.message));
-      setLoading(false);
-    }
-  };
-
-  // Toggle voice recognition recording
-  const toggleRecording = () => {
-    if (!recognitionRef.current) {
-      alert("Voice transcription is not supported in this browser. Please type your answer.");
+  const createSession = async (e) => {
+    e?.preventDefault?.();
+    const goal = prepType.trim();
+    if (!goal) {
+      setErrorBanner('Tell Ava what you are preparing for.');
       return;
     }
+    setLoading(true);
+    setErrorBanner('');
+    setLoadingStep('Understanding your goal...');
 
+    try {
+      let response;
+      if (selectedFile) {
+        const form = new FormData();
+        form.append('prep_type', goal);
+        form.append('mode', sessionMode);
+        form.append('difficulty', difficulty);
+        form.append('pasted_text', pastedText);
+        form.append('file', selectedFile);
+        response = await api.post('/mirror/sessions', form, {
+          transformRequest: [(data, headers) => {
+            if (headers) {
+              delete headers['Content-Type'];
+              delete headers['content-type'];
+            }
+            return data;
+          }]
+        });
+      } else {
+        response = await api.post('/mirror/sessions', {
+          prep_type: goal,
+          mode: sessionMode,
+          difficulty,
+          pasted_text: pastedText
+        });
+      }
+
+      setSession(response.data.session);
+      setProfile(response.data.profile);
+      setCurrentQuestion(response.data.initial_question);
+      setAvaRemark(response.data.ava_remark || response.data.response || "Let's get started.");
+      setStage('profile');
+    } catch (err) {
+      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable.');
+    } finally {
+      setLoading(false);
+      setLoadingStep('');
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (!recognitionRef.current) {
+      setErrorBanner('Microphone access is unavailable. You can type instead.');
+      return;
+    }
     if (isRecording) {
       recognitionRef.current.stop();
       setIsRecording(false);
-    } else {
+      setMicStatus('MICROPHONE ACTIVE');
+      return;
+    }
+    setMicStatus('MICROPHONE REQUESTED');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setMicStatus('LISTENING');
+      speechBaseRef.current = userAnswerText.trim();
       setIsRecording(true);
       setInputMode('voice');
+      setAvaStatus('Listening');
       recognitionRef.current.start();
+    } catch {
+      setMicStatus('MICROPHONE OFF');
+      setErrorBanner('Microphone access is unavailable. You can type instead.');
     }
   };
 
-  // Submit answer and fetch next adaptive question
   const handleSubmitAnswer = async () => {
-    if (!userAnswerText.trim() || loading) return;
+    const text = userAnswerText.trim();
+    if (!text || loading || !session) return;
+
+    if (/^(finish|end session)$/i.test(text)) {
+      await handleEndSession();
+      return;
+    }
 
     setLoading(true);
+    setAvaStatus('Thinking');
+    setErrorBanner('');
     if (isRecording && recognitionRef.current) {
       recognitionRef.current.stop();
       setIsRecording(false);
     }
 
-    // Capture observable gaze shifts count telemetry if camera was active
-    const signalsText = useCamera 
-      ? `Observable signals: ${gazeShiftsCount} minor gaze shifts registered.`
-      : null;
+    const metrics = cameraStatus === 'CAMERA ACTIVE' ? (visualMetrics || deriveVisualMetrics(visualSamplesRef.current)) : null;
 
     try {
-      const response = await api.post(`/mirror/sessions/${session.id}/submit-answer`, {
-        answer_text: userAnswerText,
-        input_mode: inputMode,
-        observational_signals: signalsText
+      const endpoint = inputMode === 'voice'
+        ? `/mirror/sessions/${session.id}/voice`
+        : `/mirror/sessions/${session.id}/message`;
+      const response = await api.post(endpoint, {
+        message: text,
+        inputMode: inputMode,
+        visualMetrics: metrics || undefined
       });
 
-      // Save question-answer dialog to current view logs
-      const updatedDialogs = [...dialogHistory, {
-        question_text: currentQuestion.question_text,
-        answer_text: userAnswerText,
-        input_mode: inputMode
-      }];
-      setDialogHistory(updatedDialogs);
+      setDialogHistory((prev) => ([
+        ...prev,
+        {
+          question_text: currentQuestion?.question_text,
+          answer_text: text,
+          input_mode: inputMode
+        }
+      ]));
 
-      if (response.data.session_limit_reached) {
-        alert(response.data.message);
-        setCurrentQuestion(null);
-      } else {
-        setCurrentQuestion(response.data.next_question);
-        setAvaRemark(response.data.ava_remark);
-      }
+      setCurrentQuestion(response.data.next_question || response.data.nextQuestion);
+      const spoken = response.data.response || response.data.ava_remark || '';
+      setAvaRemark(spoken);
+      setLastFeedback(response.data.feedback || null);
+      setSessionState(response.data.sessionState || null);
+      speakAva(spoken);
 
       setUserAnswerText('');
+      speechBaseRef.current = '';
       setInputMode('text');
-      setLoading(false);
-
     } catch (err) {
-      alert('Error submitting answer: ' + err.message);
+      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable.');
+      setAvaStatus('Listening');
+    } finally {
       setLoading(false);
     }
   };
 
-  // End conversational session & retrieve Mirror Reflection report
   const handleEndSession = async () => {
+    if (!session) return;
     setLoading(true);
     stopCamera();
-
     try {
-      const response = await api.post(`/mirror/sessions/${session.id}/end`);
+      const response = await api.post(`/mirror/sessions/${session.id}/complete`);
       const reportData = response.data.report;
-
+      const analysis = response.data.analysis || {};
       setReport({
-        communication: JSON.parse(reportData.communication_json),
-        technical: JSON.parse(reportData.technical_json),
-        presentation: JSON.parse(reportData.presentation_json || '{}'),
-        strengths: JSON.parse(reportData.strengths_json),
-        weaknesses: JSON.parse(reportData.weaknesses_json),
-        next_challenge: JSON.parse(reportData.next_challenge || '{}')
+        communication: parseMaybe(reportData.communication_json, analysis.communication || {}),
+        technical: parseMaybe(reportData.technical_json, analysis.technical || {}),
+        presentation: parseMaybe(reportData.presentation_json, {
+          scores: analysis.scores,
+          tensionIndicator: analysis.tensionIndicator,
+          practiceSuggestions: analysis.practiceSuggestions,
+          strongestArea: analysis.strongestArea,
+          improvementArea: analysis.improvementArea,
+          nextRecommendation: analysis.nextRecommendation,
+          label: 'AI communication coaching score'
+        }),
+        strengths: parseMaybe(reportData.strengths_json, analysis.strengths || []),
+        weaknesses: parseMaybe(reportData.weaknesses_json, analysis.development_areas || []),
+        next_challenge: parseMaybe(reportData.next_challenge, analysis.next_challenge || {})
       });
-
       setStage('report');
-      setLoading(false);
     } catch (err) {
-      alert('Failed to generate reflection report: ' + (err.response?.data?.error || err.message));
+      setErrorBanner(err.response?.data?.error || 'Failed to generate session report.');
+    } finally {
       setLoading(false);
     }
+  };
+
+  const replayVoice = () => {
+    if (lastSpoken) speakAva(lastSpoken);
   };
 
   return (
     <div className="min-h-screen bg-bg-dominant grid grid-cols-1 lg:grid-cols-12 text-text-primary font-sans">
-      
-      {/* Sidebar Navigation */}
+      <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
+
       <aside className="lg:col-span-2 bg-bg-secondary border-r border-border-default flex flex-col justify-between p-6 select-none">
         <div className="space-y-8">
           <div className="flex items-center gap-2">
@@ -320,15 +432,21 @@ const MirrorCoach = ({ user, handleLogout }) => {
         </div>
       </aside>
 
-      {/* Main Workspace Frame */}
       <main className="lg:col-span-10 p-6 lg:p-10 flex flex-col justify-between overflow-y-auto">
-        
-        {/* SETUP STAGE */}
+        {errorBanner && (
+          <div role="alert" className="max-w-4xl mx-auto w-full mb-4 border border-red-500/30 bg-red-950/20 text-red-300 text-xs font-mono px-4 py-3 rounded">
+            {errorBanner}
+          </div>
+        )}
+
         {stage === 'setup' && (
           <div className="max-w-4xl mx-auto w-full space-y-8 text-left">
             <div className="border-b border-border-default pb-6">
               <h1 className="text-3xl font-bold tracking-tight">MIRROR AI</h1>
-              <p className="text-sm text-text-secondary font-mono mt-1">“Prepare for anything. Practice with your own context.”</p>
+              <p className="text-sm text-text-secondary font-mono mt-1">{timeOfDayGreeting()}.</p>
+              <p className="text-base mt-3">Hi, I'm Ava.</p>
+              <p className="text-sm text-text-secondary mt-1">What are you preparing for today?</p>
+              <p className="text-xs text-brand-primary font-mono mt-2">Let's practice.</p>
             </div>
 
             {loading ? (
@@ -337,535 +455,526 @@ const MirrorCoach = ({ user, handleLogout }) => {
                 <span className="font-mono text-sm text-brand-accent animate-pulse">{loadingStep}</span>
               </div>
             ) : (
-              <form onSubmit={handleProcessMaterial} className="space-y-6">
-                
+              <form onSubmit={createSession} className="space-y-6">
                 <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
-                  <h2 className="text-sm font-bold font-mono text-brand-primary uppercase tracking-wider">What are you preparing for?</h2>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 select-none">
-                    {prepTypesList.map(type => (
-                      <div
-                        key={type}
-                        onClick={() => setPrepType(type)}
-                        className={`p-3 border rounded text-xs font-mono text-center cursor-pointer transition-all ${
-                          prepType === type 
-                            ? 'bg-brand-primary/10 border-brand-primary text-brand-primary font-bold shadow-green-glow/10' 
+                  <h2 className="text-sm font-bold font-mono text-brand-primary uppercase tracking-wider">Session mode</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 select-none">
+                    {SESSION_MODES.map((mode) => (
+                      <button
+                        type="button"
+                        key={mode}
+                        onClick={() => setSessionMode(mode)}
+                        className={`p-3 border rounded text-xs font-mono text-center cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+                          sessionMode === mode
+                            ? 'bg-brand-primary/10 border-brand-primary text-brand-primary font-bold'
                             : 'border-border-default bg-bg-secondary text-text-secondary hover:border-text-secondary'
                         }`}
                       >
-                        {type}
-                      </div>
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {DIFFICULTIES.map((level) => (
+                      <button
+                        type="button"
+                        key={level}
+                        onClick={() => setDifficulty(level)}
+                        className={`px-3 py-1.5 border rounded text-[10px] font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+                          difficulty === level
+                            ? 'border-brand-primary text-brand-primary'
+                            : 'border-border-default text-text-muted'
+                        }`}
+                      >
+                        {level}
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
-                  <h2 className="text-sm font-bold font-mono text-brand-primary uppercase tracking-wider">What should I know about your preparation?</h2>
-                  
-                  <div className="space-y-4">
-                    
-                    {/* File Upload Selector */}
-                    <div className="border-2 border-dashed border-border-default rounded-xl p-6 flex flex-col items-center justify-center space-y-2 bg-bg-secondary/40">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="bg-panel-default border border-border-default hover:border-brand-primary px-4 py-2 rounded text-xs font-mono text-text-secondary hover:text-text-primary transition-all flex items-center gap-1.5"
-                      >
-                        <Upload size={14} /> Choose Preparation Document
-                      </button>
-                      <span className="text-[10px] text-text-muted">PDF, DOC, DOCX, PPT, PPTX or TXT (Max 5MB)</span>
-                      
-                      {selectedFile && (
-                        <div className="text-xs text-brand-primary font-mono font-bold mt-1">
-                          ✓ {selectedFile.name} (Ready)
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="relative flex py-2 items-center">
-                      <div className="flex-grow border-t border-border-default"></div>
-                      <span className="flex-shrink mx-4 text-[10px] font-mono text-text-muted uppercase">OR Paste Content</span>
-                      <div className="flex-grow border-t border-border-default"></div>
-                    </div>
-
-                    {/* Text Area fallback */}
+                <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-3">
+                  <label htmlFor="mirror-goal" className="text-sm font-bold font-mono text-brand-primary uppercase tracking-wider block">
+                    Type your response... <span className="text-brand-accent" aria-hidden="true">*</span>
+                    <span className="sr-only">required</span>
+                  </label>
+                  <p className="text-[10px] text-text-muted font-mono">Voice preferred. Typing is required as an accessibility alternative.</p>
+                  <div className="flex gap-3">
                     <textarea
-                      value={pastedText}
-                      onChange={(e) => setPastedText(e.target.value)}
-                      className="w-full bg-bg-secondary border border-border-default rounded-xl p-4 text-xs focus:outline-none min-h-[140px] font-sans"
-                      placeholder="Paste job descriptions, resume topics, project logs, or study syllabi here..."
+                      id="mirror-goal"
+                      required
+                      value={prepType}
+                      onChange={(e) => setPrepType(e.target.value)}
+                      className="flex-grow bg-bg-secondary border border-border-default rounded-xl p-4 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary min-h-[88px] font-sans"
+                      placeholder="Type your response... e.g. I am preparing for a technical interview."
                     />
-
+                    <button
+                      type="button"
+                      aria-label="Use microphone"
+                      onClick={async () => {
+                        speechBaseRef.current = prepType.trim();
+                        setUserAnswerText(prepType);
+                        await toggleRecording();
+                      }}
+                      className={`min-w-[52px] min-h-[52px] p-3 rounded-xl border flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+                        isRecording ? 'border-red-500 text-red-400' : 'border-border-default text-text-secondary hover:border-brand-primary'
+                      }`}
+                    >
+                      <Mic size={22} />
+                    </button>
                   </div>
+                  <p className="text-[10px] font-mono text-text-muted">Microphone: {micStatus}</p>
+                </div>
+
+                <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
+                  <h2 className="text-sm font-bold font-mono text-brand-primary uppercase tracking-wider">Optional project context</h2>
+                  <div className="border-2 border-dashed border-border-default rounded-xl p-6 flex flex-col items-center justify-center space-y-2 bg-bg-secondary/40">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.zip,.png,.jpg,.jpeg,.js,.md"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-panel-default border border-border-default hover:border-brand-primary px-4 py-2 rounded text-xs font-mono text-text-secondary hover:text-text-primary transition-all flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+                    >
+                      <Upload size={14} /> Upload project material
+                    </button>
+                    <span className="text-[10px] text-text-muted">ZIP, PDF, DOC, PPT, image, or text. Binary files are not invented from.</span>
+                    {selectedFile && (
+                      <div className="text-xs text-brand-primary font-mono font-bold mt-1">
+                        {selectedFile.name}
+                      </div>
+                    )}
+                  </div>
+                  <textarea
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                    className="w-full bg-bg-secondary border border-border-default rounded-xl p-4 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary min-h-[120px] font-sans"
+                    placeholder="Paste a project description, notes, or syllabus. Ava will not invent details that are not here."
+                  />
                 </div>
 
                 <div className="flex justify-end pt-2">
                   <button
                     type="submit"
-                    className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-green-glow"
+                    className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-green-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
                   >
-                    Build Prep Profile →
+                    Continue with Ava →
                   </button>
                 </div>
-
               </form>
             )}
           </div>
         )}
 
-        {/* PROFILE PROFILE STAGE */}
         {stage === 'profile' && profile && (
           <div className="max-w-4xl mx-auto w-full space-y-6 text-left">
             <div className="border-b border-border-default pb-4">
-              <span className="text-[10px] font-mono text-brand-primary uppercase tracking-wider block font-bold">Step 2 / Profile Compiled</span>
-              <h1 className="text-2xl font-bold tracking-tight">PREPARATION PROFILE</h1>
-              <p className="text-xs text-text-secondary font-mono">Profile compiled from your actual context documents.</p>
+              <span className="text-[10px] font-mono text-brand-primary uppercase tracking-wider block font-bold">Preparation profile</span>
+              <h1 className="text-2xl font-bold tracking-tight">{profile.prep_title || 'Session ready'}</h1>
+              <p className="text-xs text-text-secondary font-mono">Compiled from your goal and any material you provided.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono text-xs">
-              
               <div className="md:col-span-2 space-y-4">
-                
-                {/* Topics card */}
                 <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-2">
                   <span className="text-[10px] text-text-muted uppercase block font-bold">Topics Found</span>
                   <div className="flex flex-wrap gap-2 pt-1.5">
-                    {profile.topics && profile.topics.map(t => (
-                      <span key={t} className="px-2.5 py-1 bg-bg-secondary border border-border-default text-text-secondary rounded">
-                        {t}
-                      </span>
+                    {(profile.topics || []).map((t) => (
+                      <span key={t} className="px-2.5 py-1 bg-bg-secondary border border-border-default text-text-secondary rounded">{t}</span>
                     ))}
                   </div>
                 </div>
-
-                {/* Skills card */}
                 <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-2">
                   <span className="text-[10px] text-text-muted uppercase block font-bold">Skills Requested</span>
                   <div className="flex flex-wrap gap-2 pt-1.5">
-                    {profile.skills && profile.skills.map(s => (
-                      <span key={s} className="px-2.5 py-1 bg-bg-secondary border border-border-default text-brand-primary rounded">
-                        {s}
-                      </span>
+                    {(profile.skills || []).map((s) => (
+                      <span key={s} className="px-2.5 py-1 bg-bg-secondary border border-border-default text-brand-primary rounded">{s}</span>
                     ))}
                   </div>
                 </div>
-
-                {/* Important Areas card */}
                 <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-2.5">
                   <span className="text-[10px] text-text-muted uppercase block font-bold">Important Focus Areas</span>
                   <ul className="list-disc pl-4 space-y-1.5 text-text-secondary">
-                    {profile.important_areas && profile.important_areas.map((a, i) => (
+                    {(profile.important_areas || []).map((a, i) => (
                       <li key={i}>{a}</li>
                     ))}
                   </ul>
                 </div>
-
               </div>
 
               <div className="space-y-4">
-                
                 <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
                   <div>
-                    <span className="text-[10px] text-text-muted uppercase block font-bold">Prep Category</span>
+                    <span className="text-[10px] text-text-muted uppercase block font-bold">Goal</span>
                     <span className="text-text-primary font-bold text-sm block mt-0.5">{prepType}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-text-muted uppercase block font-bold">Material Title</span>
-                    <span className="text-text-secondary block mt-0.5 truncate">{profile.prep_title}</span>
+                    <span className="text-[10px] text-text-muted uppercase block font-bold">Mode</span>
+                    <span className="text-text-secondary block mt-0.5">{sessionMode}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-text-muted uppercase block font-bold">Difficulty Rank</span>
-                    <span className="text-brand-accent font-bold uppercase block mt-0.5">{profile.difficulty}</span>
+                    <span className="text-[10px] text-text-muted uppercase block font-bold">Difficulty</span>
+                    <span className="text-brand-accent font-bold uppercase block mt-0.5">{profile.difficulty || difficulty}</span>
                   </div>
                 </div>
-
                 <button
                   onClick={() => setPermissionPromptOpen(true)}
-                  className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-green-glow"
+                  className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-green-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
                 >
-                  Configure Hardware Devices →
+                  Start session →
                 </button>
-
               </div>
-
             </div>
           </div>
         )}
 
-        {/* LIVE SESSION STAGE */}
         {stage === 'live' && currentQuestion && (
           <div className="max-w-4xl mx-auto w-full space-y-8 flex flex-col justify-between flex-grow h-[calc(100vh-8rem)]">
-            
-            {/* Session Top Bar */}
             <div className="flex justify-between items-center border-b border-border-default pb-4 text-left select-none">
               <div>
-                <span className="text-[10px] font-mono text-brand-primary uppercase tracking-widest block font-bold">Practice Studio</span>
+                <span className="text-[10px] font-mono text-brand-primary uppercase tracking-widest block font-bold">Mirror AI</span>
                 <h1 className="text-xl font-bold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> MIRROR SESSION LIVE
+                  <span className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" /> AVA {avaStatus}...
                 </h1>
               </div>
               <button
                 onClick={handleEndSession}
-                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-1.5 rounded font-mono text-xs font-bold transition-all"
+                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-1.5 rounded font-mono text-xs font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               >
                 End Session
               </button>
             </div>
 
-            {/* Conversational Layout (Ava & Camera split) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow py-4 min-h-0">
-              
-              {/* Left Column: Ava AI Coach displays */}
-              <div className="md:col-span-2 bg-panel-default border border-border-default rounded-xl p-6 flex flex-col justify-between items-center relative min-h-[300px]">
-                
-                {/* Ava Profile Info */}
+              <div className="md:col-span-2 bg-panel-default border border-border-default rounded-xl p-6 flex flex-col justify-between relative min-h-[300px]">
                 <div className="absolute top-4 left-6 flex items-center gap-2 select-none">
-                  <div className="w-7 h-7 rounded-full border border-brand-primary flex items-center justify-center bg-bg-secondary text-brand-primary text-[10px] font-bold">
-                    AV
-                  </div>
+                  <div className="w-7 h-7 rounded-full border border-brand-primary flex items-center justify-center bg-bg-secondary text-brand-primary text-[10px] font-bold">AV</div>
                   <div className="text-left">
                     <span className="text-xs font-bold block">AVA</span>
-                    <span className="text-[9px] font-mono text-text-muted uppercase">Coaching Agent</span>
+                    <span className="text-[9px] font-mono text-text-muted uppercase">{avaStatus}</span>
                   </div>
                 </div>
 
-                <div className="flex-grow flex flex-col justify-center items-center text-center space-y-4 max-w-lg mt-8">
+                <div className="flex-grow flex flex-col justify-center text-left space-y-4 max-w-2xl mt-10 px-2">
                   {avaRemark && (
-                    <span className="text-[10px] font-mono text-brand-accent uppercase tracking-wider bg-brand-primary/5 px-2 py-0.5 rounded border border-brand-primary/10">
-                      {avaRemark}
-                    </span>
+                    <p className="text-sm text-text-secondary leading-relaxed">{avaRemark}</p>
                   )}
                   <p className="text-base font-medium leading-relaxed">
-                    "{currentQuestion.question_text}"
+                    {currentQuestion.question_text}
                   </p>
+                  {lastFeedback && (lastFeedback.well || lastFeedback.improve || lastFeedback.tryThis) && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] font-mono">
+                      <div className="border border-border-default rounded p-3">
+                        <span className="text-brand-primary block mb-1">WHAT YOU DID WELL</span>
+                        <p className="text-text-secondary font-sans">{lastFeedback.well || '—'}</p>
+                      </div>
+                      <div className="border border-border-default rounded p-3">
+                        <span className="text-yellow-400 block mb-1">AREAS TO IMPROVE</span>
+                        <p className="text-text-secondary font-sans">{lastFeedback.improve || '—'}</p>
+                      </div>
+                      <div className="border border-border-default rounded p-3">
+                        <span className="text-text-primary block mb-1">BETTER WAY TO ANSWER</span>
+                        <p className="text-text-secondary font-sans">{lastFeedback.tryThis || '—'}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="w-full select-none text-center">
-                  <span className="text-[9px] font-mono text-text-muted uppercase tracking-wider block">Ava adaptive dialogue prompt</span>
+                <div className="flex gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setTtsMuted((v) => !v)}
+                    className="px-3 py-2 border border-border-default rounded text-[10px] font-mono flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+                    aria-label={ttsMuted ? 'Unmute Ava' : 'Mute Ava'}
+                  >
+                    {ttsMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} {ttsMuted ? 'Muted' : 'Mute voice'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={replayVoice}
+                    disabled={!lastSpoken}
+                    className="px-3 py-2 border border-border-default rounded text-[10px] font-mono flex items-center gap-1.5 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+                    aria-label="Replay Ava response"
+                  >
+                    <RotateCcw size={14} /> Replay response
+                  </button>
                 </div>
               </div>
 
-              {/* Right Column: Hardware Telemetry previews */}
               <div className="space-y-4 flex flex-col justify-between">
-                
-                {/* Camera Viewport box */}
                 <div className="bg-panel-default border border-border-default rounded-xl overflow-hidden relative flex-grow min-h-[180px] flex items-center justify-center">
-                  {useCamera ? (
+                  {cameraStatus === 'CAMERA ACTIVE' ? (
                     <>
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover"
-                      />
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                       <div className="absolute top-3 left-3 bg-black/60 px-2 py-1 rounded text-[9px] font-mono text-brand-primary border border-brand-primary/20 select-none">
-                        ● TELEMETRY RECORDING
+                        CAMERA ACTIVE
                       </div>
                     </>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center p-6 space-y-2 select-none">
                       <VideoOff size={24} className="text-text-muted" />
-                      <span className="text-[10px] font-mono text-text-muted">Camera Stream Off</span>
+                      <span className="text-[10px] font-mono text-text-muted">{cameraStatus}</span>
+                      <span className="text-[10px] text-text-secondary">{cameraNote || 'Camera unavailable'}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Voice waveform when recording */}
-                {isRecording && (
+                {(isRecording || loading) && (
                   <div className="bg-panel-default border border-border-default rounded-xl p-4 flex flex-col items-center justify-center space-y-2">
-                    <span className="text-[10px] font-mono text-text-muted uppercase block">Waveform Indicator</span>
-                    <Waveform state="LISTENING" />
+                    <span className="text-[10px] font-mono text-text-muted uppercase block">
+                      {loading ? 'PROCESSING' : 'LISTENING'}
+                    </span>
+                    <Waveform state={loading ? 'PROCESSING' : 'LISTENING'} />
                   </div>
                 )}
-
               </div>
-
             </div>
 
-            {/* Answer & Controls Area */}
+            {dialogHistory.length > 0 && (
+              <div className="max-h-28 overflow-y-auto border border-border-default rounded-xl p-3 text-[11px] space-y-2 bg-bg-secondary">
+                {dialogHistory.map((d, i) => (
+                  <div key={i}>
+                    <p className="text-brand-primary font-mono">Ava: {d.question_text}</p>
+                    <p className="text-text-secondary">You: {d.answer_text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-4 border-t border-border-default pt-4 text-left">
-              
               <div className="space-y-2">
-                <label className="block text-xs font-mono text-text-secondary uppercase">
-                  {inputMode === 'voice' ? 'Transcribing Response...' : 'Type your answer...'}
+                <label htmlFor="mirror-answer" className="block text-xs font-mono text-text-secondary uppercase">
+                  Type your response... <span className="text-brand-accent">*</span>
                 </label>
                 <div className="flex gap-3">
                   <textarea
+                    id="mirror-answer"
                     value={userAnswerText}
                     onChange={(e) => {
                       setUserAnswerText(e.target.value);
+                      speechBaseRef.current = e.target.value;
                       setInputMode('text');
                     }}
-                    className="flex-grow bg-bg-secondary border border-border-default rounded-xl p-3 text-xs focus:outline-none min-h-[80px] font-sans"
-                    placeholder="Provide your answer to Ava's question..."
+                    className="flex-grow bg-bg-secondary border border-border-default rounded-xl p-3 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary min-h-[80px] font-sans"
+                    placeholder="Type your response..."
                   />
                   <button
                     onClick={handleSubmitAnswer}
                     disabled={loading || !userAnswerText.trim()}
-                    className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40 select-none shadow-green-glow"
+                    className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-40 select-none shadow-green-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
                   >
-                    Submit
+                    Send
                   </button>
                 </div>
               </div>
 
-              {/* Toolbar Controls */}
               <div className="flex justify-between items-center bg-bg-secondary border border-border-default rounded-xl p-3 select-none">
                 <div className="flex gap-2">
                   <button
                     onClick={toggleRecording}
-                    className={`p-2 rounded border transition-all flex items-center gap-1.5 text-xs font-mono font-bold ${
-                      isRecording 
-                        ? 'border-red-500 bg-red-500/10 text-red-400' 
+                    aria-label="Microphone"
+                    className={`min-w-[44px] min-h-[44px] p-2 rounded border transition-all flex items-center gap-1.5 text-xs font-mono font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+                      isRecording
+                        ? 'border-red-500 bg-red-500/10 text-red-400'
                         : 'border-border-default hover:border-brand-primary text-text-secondary hover:text-text-primary'
                     }`}
                   >
-                    <Mic size={14} /> {isRecording ? 'Mute Mic' : 'Record Voice'}
+                    <Mic size={16} /> {isRecording ? 'Stop' : 'Voice'}
                   </button>
-
                   <button
-                    onClick={() => setUseCamera(!useCamera)}
-                    className={`p-2 rounded border transition-all flex items-center gap-1.5 text-xs font-mono font-bold ${
-                      useCamera 
-                        ? 'border-brand-primary bg-brand-primary/10 text-brand-primary' 
+                    onClick={() => {
+                      if (cameraStatus === 'CAMERA ACTIVE' || wantCamera) {
+                        stopCamera();
+                        setWantCamera(false);
+                        setCameraStatus('CAMERA NOT CONNECTED');
+                      } else {
+                        setWantCamera(true);
+                      }
+                    }}
+                    aria-label="Camera"
+                    className={`min-w-[44px] min-h-[44px] p-2 rounded border transition-all flex items-center gap-1.5 text-xs font-mono font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+                      cameraStatus === 'CAMERA ACTIVE'
+                        ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
                         : 'border-border-default hover:border-brand-primary text-text-secondary hover:text-text-primary'
                     }`}
                   >
-                    <Camera size={14} /> {useCamera ? 'Disable Camera' : 'Enable Camera'}
+                    <Camera size={16} /> Camera
                   </button>
                 </div>
-
-                <span className="text-[10px] font-mono text-text-muted">
-                  Questions asked: {dialogHistory.length} / 5
-                </span>
+                <div className="text-[10px] font-mono text-text-muted text-right space-y-0.5">
+                  <div>{micStatus}{!speechSupported ? ' · type instead' : ''}</div>
+                  <div>{cameraStatus}</div>
+                  {sessionState?.tensionIndicator && (
+                    <div>Possible tension indicators: {sessionState.tensionIndicator}</div>
+                  )}
+                </div>
               </div>
-
             </div>
-
           </div>
         )}
 
-        {/* REPORT STAGE */}
         {stage === 'report' && report && (
           <div className="max-w-4xl mx-auto w-full space-y-8 text-left">
-            
             <div className="border-b border-border-default pb-6 select-none">
-              <h1 className="text-3xl font-bold tracking-tight">MIRROR REFLECTION REPORT</h1>
-              <p className="text-sm text-text-secondary font-mono mt-1">Practice session complete. Real analytics of your technical mastery.</p>
+              <h1 className="text-3xl font-bold tracking-tight">MIRROR AI SESSION REPORT</h1>
+              <p className="text-sm text-text-secondary font-mono mt-1">
+                {report.presentation?.label || 'AI communication coaching score'} · not a medical or scientific assessment
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono text-xs">
-              
               <div className="md:col-span-2 space-y-6">
-                
-                {/* 1. COMMUNICATION REPORT */}
+                {report.presentation?.scores && (
+                  <div className="bg-panel-default border border-border-default rounded-xl p-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.entries(report.presentation.scores).map(([k, v]) => (
+                      <div key={k} className="border border-border-default rounded p-3">
+                        <span className="text-text-muted uppercase block text-[9px]">{k}</span>
+                        <span className="text-brand-primary text-lg font-bold">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
                   <h3 className="text-sm font-bold text-brand-primary uppercase tracking-wider border-b border-border-default pb-2">
-                    💬 Communication Analysis
+                    Communication Analysis
                   </h3>
                   <div className="space-y-4 font-sans text-xs text-text-secondary leading-relaxed">
                     <div>
-                      <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Clarity Feedback</span>
+                      <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Clarity</span>
                       <p className="mt-1">{report.communication.clarity}</p>
                     </div>
                     <div>
-                      <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Answer Structure</span>
+                      <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Structure</span>
                       <p className="mt-1">{report.communication.structure_feedback}</p>
                     </div>
                     <div className="p-3 bg-bg-secondary border border-border-default rounded font-mono text-xs flex justify-between items-center select-none">
-                      <span className="text-text-muted">Filler words count:</span>
+                      <span className="text-text-muted">Filler words observed:</span>
                       <span className="font-bold text-brand-primary">{report.communication.filler_words_count}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. TECHNICAL UNDERSTANDING REPORT */}
                 <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
                   <h3 className="text-sm font-bold text-brand-primary uppercase tracking-wider border-b border-border-default pb-2">
-                    🧠 Technical Mastery
+                    Technical explanation
                   </h3>
-                  <div className="space-y-4 font-sans text-xs text-text-secondary leading-relaxed">
-                    <div>
-                      <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Terminology & Explanations</span>
-                      <p className="mt-1">{report.technical.explanation_quality}</p>
+                  <p className="font-sans text-xs text-text-secondary">{report.technical.explanation_quality}</p>
+                  <div className="grid grid-cols-2 gap-4 font-mono text-[11px] pt-2">
+                    <div className="p-3 bg-bg-secondary rounded border border-border-default">
+                      <span className="text-brand-primary font-bold block mb-1">Strong Topics</span>
+                      <ul className="list-disc pl-4 space-y-1 text-text-secondary">
+                        {(report.technical.strong_areas || []).map((s) => <li key={s}>{s}</li>)}
+                      </ul>
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 font-mono text-[11px] pt-2">
-                      <div className="p-3 bg-bg-secondary rounded border border-border-default">
-                        <span className="text-brand-primary font-bold block mb-1">Strong Topics</span>
-                        <ul className="list-disc pl-4 space-y-1 text-text-secondary">
-                          {report.technical.strong_areas && report.technical.strong_areas.map(s => (
-                            <li key={s}>{s}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="p-3 bg-bg-secondary rounded border border-border-default">
-                        <span className="text-red-400 font-bold block mb-1">Needs Practice</span>
-                        <ul className="list-disc pl-4 space-y-1 text-text-secondary">
-                          {report.technical.weak_areas && report.technical.weak_areas.map(w => (
-                            <li key={w}>{w}</li>
-                          ))}
-                        </ul>
-                      </div>
+                    <div className="p-3 bg-bg-secondary rounded border border-border-default">
+                      <span className="text-red-400 font-bold block mb-1">Needs Practice</span>
+                      <ul className="list-disc pl-4 space-y-1 text-text-secondary">
+                        {(report.technical.weak_areas || []).map((w) => <li key={w}>{w}</li>)}
+                      </ul>
                     </div>
-
                   </div>
                 </div>
 
-                {/* 3. STRENGTHS & DEVELOPMENT AREAS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
                   <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
-                    <h4 className="text-xs font-bold text-brand-primary uppercase font-mono tracking-wider">★ Your Strengths</h4>
-                    <div className="space-y-2 text-xs font-sans text-text-secondary leading-relaxed">
-                      {report.strengths && report.strengths.map((s, idx) => (
-                        <div key={idx} className="border-b border-border-default/30 pb-2 last:border-0">
-                          <span className="font-bold text-text-primary block font-mono text-[10px]">{s.area}</span>
-                          <p className="mt-0.5">"{s.evidence}"</p>
-                        </div>
-                      ))}
-                    </div>
+                    <h4 className="text-xs font-bold text-brand-primary uppercase font-mono tracking-wider">Strengths</h4>
+                    {(report.strengths || []).map((s, idx) => (
+                      <div key={idx} className="border-b border-border-default/30 pb-2 last:border-0">
+                        <span className="font-bold text-text-primary block font-mono text-[10px]">{s.area}</span>
+                        <p className="mt-0.5 text-text-secondary">{s.evidence}</p>
+                      </div>
+                    ))}
                   </div>
-
                   <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
-                    <h4 className="text-xs font-bold text-yellow-400 uppercase font-mono tracking-wider">▲ Areas to Develop</h4>
-                    <div className="space-y-2 text-xs font-sans text-text-secondary leading-relaxed">
-                      {report.weaknesses && report.weaknesses.map((w, idx) => (
-                        <div key={idx} className="border-b border-border-default/30 pb-2 last:border-0">
-                          <span className="font-bold text-text-primary block font-mono text-[10px]">{w.area}</span>
-                          <p className="mt-0.5">"{w.evidence}"</p>
-                        </div>
-                      ))}
-                    </div>
+                    <h4 className="text-xs font-bold text-yellow-400 uppercase font-mono tracking-wider">Improvements</h4>
+                    {(report.weaknesses || []).map((w, idx) => (
+                      <div key={idx} className="border-b border-border-default/30 pb-2 last:border-0">
+                        <span className="font-bold text-text-primary block font-mono text-[10px]">{w.area}</span>
+                        <p className="mt-0.5 text-text-secondary">{w.evidence}</p>
+                      </div>
+                    ))}
                   </div>
-
                 </div>
-
               </div>
 
-              {/* Right Column: Presentation mirror & Challenges */}
               <div className="space-y-6">
-                
-                {/* Presentation Mirror */}
                 <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
-                  <h4 className="text-xs font-bold text-brand-primary uppercase font-mono tracking-wider">🪞 Presentation Mirror</h4>
-                  
-                  {useCamera ? (
-                    <div className="space-y-3 font-sans text-xs text-text-secondary">
-                      <div>
-                        <span className="font-bold font-mono text-[10px] text-text-muted uppercase block">Observable signals</span>
-                        <p className="mt-1">Observable presentation signals verified minor gaze shifts during response iterations.</p>
-                      </div>
-                      <div className="p-3 bg-bg-secondary rounded border border-border-default font-mono text-[10px] text-text-muted leading-relaxed">
-                        Camera analysis provides observable presentation signals. It does not determine your true emotional state and is not a medical assessment.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="py-6 text-center border border-dashed border-border-default rounded text-[10px] text-text-muted uppercase">
-                      Camera Not Used
-                    </div>
-                  )}
+                  <h4 className="text-xs font-bold text-brand-primary uppercase font-mono tracking-wider">Possible tension indicators</h4>
+                  <p className="text-sm font-bold">{report.presentation?.tensionIndicator || 'MOSTLY STEADY'}</p>
+                  <p className="text-[10px] text-text-muted leading-relaxed">
+                    Based on observable communication signals. This is not a diagnosis and does not determine emotional state.
+                  </p>
                 </div>
-
-                {/* Personalized challenge */}
-                {report.next_challenge && (
-                  <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
-                    <h4 className="text-xs font-bold text-brand-accent uppercase font-mono tracking-wider">🎯 Recommended Next Challenge</h4>
-                    <div className="space-y-2 font-sans text-xs text-text-secondary">
-                      <span className="font-bold text-text-primary block font-mono text-[10px]">{report.next_challenge.title}</span>
-                      <p className="leading-relaxed">{report.next_challenge.description}</p>
-                    </div>
+                <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-2 text-xs text-text-secondary">
+                  <p><span className="text-brand-primary font-bold">Strongest area:</span> {report.presentation?.strongestArea || report.next_challenge?.title}</p>
+                  <p><span className="text-brand-primary font-bold">Main improvement:</span> {report.presentation?.improvementArea}</p>
+                  <p><span className="text-brand-primary font-bold">Next time, practice:</span> {report.presentation?.nextRecommendation}</p>
+                </div>
+                {report.presentation?.practiceSuggestions?.length > 0 && (
+                  <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-2">
+                    <h4 className="text-xs font-bold text-brand-accent uppercase font-mono">Practice suggestions</h4>
+                    <ul className="list-disc pl-4 text-xs text-text-secondary space-y-1">
+                      {report.presentation.practiceSuggestions.map((s) => <li key={s}>{s}</li>)}
+                    </ul>
                   </div>
                 )}
-
+                <p className="text-[10px] text-text-muted">
+                  Privacy: derived metrics and transcripts are stored for your account. Raw camera video is not uploaded continuously.
+                </p>
                 <button
                   onClick={() => navigate('/dashboard')}
                   className="w-full py-2.5 bg-panel-default border border-border-default hover:border-brand-primary text-text-secondary hover:text-brand-primary rounded font-mono text-xs font-bold transition-all text-center"
                 >
-                  Close Reflection Report
+                  Close report
                 </button>
-
               </div>
-
             </div>
-
           </div>
         )}
-
       </main>
 
-      {/* Permission Prompts Modal */}
       {permissionPromptOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-panel-default border border-border-default max-w-sm w-full rounded-xl p-6 space-y-4 text-left font-mono text-xs select-none">
             <div className="flex justify-between items-center border-b border-border-default pb-3">
-              <span className="font-bold text-text-primary uppercase tracking-wider">Device Permissions</span>
-              <button onClick={() => setPermissionPromptOpen(false)} className="text-text-muted hover:text-text-primary">
-                <X size={16} />
-              </button>
+              <span className="font-bold text-text-primary uppercase tracking-wider">Permissions</span>
+              <button onClick={() => setPermissionPromptOpen(false)} className="text-text-muted hover:text-text-primary" aria-label="Close">×</button>
             </div>
-
             <p className="text-text-secondary leading-relaxed font-sans">
-              To proceed to the live Mirror Coach studio, configure which diagnostic inputs you would like to enable:
+              Camera is used only to provide communication coaching based on visible interaction signals. You can continue without camera or microphone.
             </p>
-
-            <div className="space-y-3">
-              <label className="flex items-start gap-2.5 p-3.5 bg-bg-secondary/40 border border-border-default rounded cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useVoice}
-                  onChange={(e) => setUseVoice(e.target.checked)}
-                  className="mt-1 cursor-pointer"
-                />
-                <div>
-                  <span className="font-bold text-text-primary block">🎙️ Enable Voice Interaction</span>
-                  <span className="text-[10px] text-text-secondary font-sans leading-normal block mt-0.5">
-                    Recommended. Enables microphone audio transcription to speak answers naturally to Ava.
-                  </span>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-2.5 p-3.5 bg-bg-secondary/40 border border-border-default rounded cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useCamera}
-                  onChange={(e) => setUseCamera(e.target.checked)}
-                  className="mt-1 cursor-pointer"
-                />
-                <div>
-                  <span className="font-bold text-text-primary block">📷 Enable Presentation Mirror</span>
-                  <span className="text-[10px] text-text-secondary font-sans leading-normal block mt-0.5">
-                    Optional. Uses webcam streams to monitor observable head posture or gaze shifts.
-                  </span>
-                </div>
-              </label>
-            </div>
-
-            <div className="p-3 bg-bg-secondary rounded border border-border-default text-[10px] text-text-muted leading-relaxed font-sans">
-              Camera/microphone analysis provides observable presentation signals. It does not determine your true emotional state and is not a medical or psychological assessment.
-            </div>
-
+            <label className="flex items-start gap-2.5 p-3.5 bg-bg-secondary/40 border border-border-default rounded cursor-pointer">
+              <input type="checkbox" checked={useVoice} onChange={(e) => setUseVoice(e.target.checked)} className="mt-1 cursor-pointer" />
+              <div>
+                <span className="font-bold text-text-primary block">Voice (preferred)</span>
+                <span className="text-[10px] text-text-secondary font-sans block mt-0.5">Typing remains available.</span>
+              </div>
+            </label>
+            <label className="flex items-start gap-2.5 p-3.5 bg-bg-secondary/40 border border-border-default rounded cursor-pointer">
+              <input type="checkbox" checked={wantCamera} onChange={(e) => setWantCamera(e.target.checked)} className="mt-1 cursor-pointer" />
+              <div>
+                <span className="font-bold text-text-primary block">Camera (optional)</span>
+                <span className="text-[10px] text-text-secondary font-sans block mt-0.5">Denied camera does not block the session.</span>
+              </div>
+            </label>
             <button
               onClick={() => {
                 setPermissionPromptOpen(false);
+                speakAva(avaRemark);
                 setStage('live');
               }}
               className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent py-3 rounded font-bold uppercase tracking-wider transition-all shadow-green-glow"
             >
-              Start Practice Session
+              Start practice session
             </button>
           </div>
         </div>
       )}
-
     </div>
   );
 };

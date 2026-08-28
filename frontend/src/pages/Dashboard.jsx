@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Sparkles, AlertCircle, Compass, History, Settings, LogOut, CheckCircle, Clock, Database, Plus, Mail, Upload, X, BarChart2, Mic, FolderOpen, Target } from 'lucide-react';
 import api from '../utils/api';
+import { timeOfDayGreeting } from '../utils/greeting';
 
 const Dashboard = ({ user, handleLogout }) => {
   const [missions, setMissions] = useState([]);
@@ -117,7 +118,7 @@ const Dashboard = ({ user, handleLogout }) => {
 
   // Metrics Calculations (NO static fake fallbacks!)
   const debugSessionsCount = missions.length;
-  const bugsVerifiedCount = missions.filter(m => m.status === 'VERIFIED_FIXED').length;
+  const bugsVerifiedCount = missions.filter(m => m.status === 'VERIFIED_FIXED' || m.status === 'VERIFIED').length;
 
   const latestSignals = skills.length > 0 ? skills[skills.length - 1] : null;
   const skillSignalAverage = latestSignals 
@@ -239,7 +240,7 @@ const Dashboard = ({ user, handleLogout }) => {
         {/* Welcome Banner */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border-default pb-6 text-left">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Good morning, {user.full_name?.split(' ')[0] || 'Developer'}.</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{timeOfDayGreeting()}, {user.full_name?.split(' ')[0] || 'Developer'}.</h1>
             <p className="text-xs text-text-secondary font-mono mt-1">Your AI debugging workspace is ready.</p>
           </div>
           <div className="flex gap-3">
@@ -381,13 +382,13 @@ const Dashboard = ({ user, handleLogout }) => {
                             <td className="py-3 text-center">{mission.attempts_count}</td>
                             <td className="py-3">
                               <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold ${
-                                mission.status === 'VERIFIED_FIXED' 
+                                (mission.status === 'VERIFIED_FIXED' || mission.status === 'VERIFIED') 
                                   ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/25' 
                                   : mission.status === 'FAILED' 
                                   ? 'bg-red-500/10 text-red-400 border border-red-500/25'
                                   : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/25'
                               }`}>
-                                {mission.status === 'VERIFIED_FIXED' ? '✓ VERIFIED' : mission.status === 'FAILED' ? '✕ FAILED' : '● IN PROGRESS'}
+                                {(mission.status === 'VERIFIED_FIXED' || mission.status === 'VERIFIED') ? '✓ VERIFIED' : mission.status === 'FAILED' ? '✕ FAILED' : '● IN PROGRESS'}
                               </span>
                             </td>
                             <td className="py-3 pr-2 text-right text-text-muted text-[10px]">
@@ -456,7 +457,7 @@ const Dashboard = ({ user, handleLogout }) => {
                       </div>
                       <div className="pt-2">
                         <a
-                          href={`/mirror/${missions.find(m => m.status === 'VERIFIED_FIXED')?.id}`}
+                          href={`/mirror/${missions.find(m => m.status === 'VERIFIED_FIXED' || m.status === 'VERIFIED')?.id}`}
                           className="w-full flex items-center justify-center py-2.5 border border-brand-primary text-brand-primary bg-brand-primary/5 hover:bg-brand-primary hover:text-bg-dominant transition-all rounded text-center text-xs font-bold"
                         >
                           Open Mirror AI Reflector →

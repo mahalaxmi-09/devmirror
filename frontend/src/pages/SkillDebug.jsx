@@ -101,12 +101,13 @@ const SkillDebug = () => {
           setSelectedFile(response.data.files[0]);
         }
 
-        if (response.data.status === 'VERIFIED_FIXED') {
+        const verified = response.data.status === 'VERIFIED_FIXED' || response.data.status === 'VERIFIED';
+        if (verified) {
           setPatchApplied(true);
-          const passedRun = response.data.test_runs.find(r => r.status === 'PASSED');
+          const passedRun = (response.data.test_runs || []).find(r => r.status === 'PASSED');
           if (passedRun) {
             setSandboxResult({ success: true, exitCode: 0 });
-            setTerminalOutput(`$ npm test\n\n${passedRun.stdout}\n\nProcess exited with code 0`);
+            setTerminalOutput(`$ run\n\n${passedRun.stdout || ''}\n\nProcess exited with code ${passedRun.exit_code ?? 0}`);
           }
         }
       } catch (err) {
@@ -197,7 +198,7 @@ const SkillDebug = () => {
       }
 
       // 6. Trigger AI investigation and root-cause analysis
-      await api.post(`/missions/${missionData.id}/analyze`);
+      await api.post(`/missions/${missionData.id}/investigate`);
 
       // 7. Route user to active debugging workspace
       navigate(`/debug/${missionData.id}`);
@@ -231,27 +232,43 @@ const SkillDebug = () => {
     }
   };
 
-  // Verification pipeline indicators
+  const isVerifiedStatus = (status) => status === 'VERIFIED' || status === 'VERIFIED_FIXED';
+  const hasEvent = (types) => (mission?.events || []).some((e) => types.includes(e.event_type));
+
   const getStepStatus = (stepIndex) => {
     if (!mission) return 'pending';
     const status = mission.status;
+    const verified = isVerifiedStatus(status) || hasEvent(['verification_passed']);
+    const failed = status === 'FAILED' && !verified;
 
-    if (stepIndex === 1) return 'completed'; // Listen
-    if (stepIndex === 2) return 'completed'; // Collect
+    if (stepIndex === 1) return mission.id ? 'completed' : 'pending';
+    if (stepIndex === 2) {
+      return (hasEvent(['evidence_received']) || (mission.files || []).length) ? 'completed' : 'pending';
+    }
     if (stepIndex === 3) {
-      return (status !== 'INVESTIGATING') ? 'completed' : 'active';
+      if (hasEvent(['gemini_started', 'tool_executed']) || ['ANALYZING', 'REPRODUCING', 'INVESTIGATING', 'DIAGNOSIS_READY', 'PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED', 'FAILED'].includes(status)) {
+        return 'completed';
+      }
+      return 'pending';
     }
     if (stepIndex === 4) {
-      return (status === 'PATCH_GENERATED' || status === 'VERIFIED_FIXED') ? 'completed' : (status === 'FAILED' ? 'failed' : 'pending');
+      if (hasEvent(['problem_reproduced']) || ['REPRODUCING', 'INVESTIGATING', 'DIAGNOSIS_READY', 'PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
+      if (failed) return 'failed';
+      return 'pending';
     }
     if (stepIndex === 5) {
-      return (status === 'PATCH_GENERATED' || status === 'VERIFIED_FIXED') ? 'completed' : 'pending';
+      if (hasEvent(['patch_applied', 'patch_generated']) || ['PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
+      return 'pending';
     }
     if (stepIndex === 6) {
-      return (status === 'VERIFIED_FIXED') ? 'completed' : (status === 'PATCH_GENERATED' && loading ? 'active' : 'pending');
+      if (hasEvent(['execution_completed', 'tests_completed']) || ['EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
+      return 'pending';
     }
     if (stepIndex === 7) {
-      return (status === 'VERIFIED_FIXED') ? 'completed' : 'pending';
+      if (verified) return 'completed';
+      if (hasEvent(['verification_failed']) || failed) return 'failed';
+      if (status === 'VERIFYING') return 'active';
+      return 'pending';
     }
     return 'pending';
   };
@@ -674,7 +691,7 @@ const SkillDebug = () => {
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-mono text-text-muted">MISSION #DM-{mission.id}</span>
           <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-border-default bg-panel-default">
-            <span className={`w-1.5 h-1.5 rounded-full ${mission.status === 'VERIFIED_FIXED' ? 'bg-brand-primary' : 'bg-yellow-500 animate-pulse'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${isVerifiedStatus(mission.status) ? 'bg-brand-primary' : mission.status === 'FAILED' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
             <span className="text-[10px] font-mono text-text-secondary uppercase">{mission.status}</span>
           </div>
         </div>
@@ -736,7 +753,7 @@ const SkillDebug = () => {
           {/* Code panel editor content */}
           <div className="flex-grow bg-bg-dominant p-4 overflow-y-auto font-mono text-xs leading-relaxed text-text-primary text-left select-text">
             {selectedFile ? (
-              mission.status === 'PATCH_GENERATED' && mission.changes && mission.changes[0]?.filename === selectedFile.filename && !patchApplied ? (
+              (mission.status === 'PATCH_GENERATED' || mission.status === 'PATCH_READY') && mission.changes && mission.changes[0]?.filename === selectedFile.filename && !patchApplied ? (
                 <div className="space-y-4">
                   <div className="p-3.5 bg-yellow-950/20 border border-yellow-500/25 rounded text-[11px] text-yellow-400 flex items-start gap-2.5">
                     <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -784,7 +801,7 @@ const SkillDebug = () => {
 
           {/* Footer Controls */}
           <div className="h-16 border-t border-border-default bg-bg-secondary px-6 flex items-center justify-between select-none">
-            {mission.status === 'PATCH_GENERATED' && !patchApplied ? (
+            {(mission.status === 'PATCH_GENERATED' || mission.status === 'PATCH_READY') && !patchApplied ? (
               <div className="flex items-center gap-3 w-full justify-between">
                 <span className="text-[11px] text-text-secondary font-mono">
                   Agent patch ready for execution.
@@ -878,7 +895,13 @@ const SkillDebug = () => {
                     getStepStatus(7) === 'completed' ? 'bg-brand-primary' : 'bg-border-default'
                   }`} />
                   <span className="font-bold text-text-primary block">07 VERIFY</span>
-                  <span className="text-[10px] text-text-secondary">Outcome confirmed fixed.</span>
+                  <span className="text-[10px] text-text-secondary">
+                    {isVerifiedStatus(mission.status)
+                      ? 'Outcome confirmed fixed.'
+                      : mission.status === 'FAILED'
+                        ? 'Verification did not pass.'
+                        : 'Waiting for execution evidence.'}
+                  </span>
                 </div>
 
               </div>
@@ -918,7 +941,7 @@ const SkillDebug = () => {
           <div className="h-20 border-t border-border-default bg-panel-default px-6 flex items-center justify-between select-none">
             <div className="text-left">
               <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Mirror AI status</span>
-              {mission.status === 'VERIFIED_FIXED' ? (
+              {isVerifiedStatus(mission.status) ? (
                 <span className="text-xs font-bold text-brand-primary">Unlocked</span>
               ) : (
                 <span className="text-xs font-bold text-text-muted flex items-center gap-1"><Lock size={10} /> Locked</span>
@@ -926,7 +949,7 @@ const SkillDebug = () => {
             </div>
             
             <div className="flex gap-2">
-              {mission.status === 'VERIFIED_FIXED' && (
+              {isVerifiedStatus(mission.status) && (
                 <button
                   onClick={() => setShowReportModal(true)}
                   className="border border-border-default hover:border-brand-primary px-4 py-2 rounded text-xs font-mono text-text-secondary hover:text-text-primary transition-all"
@@ -935,7 +958,7 @@ const SkillDebug = () => {
                 </button>
               )}
 
-              {mission.status === 'VERIFIED_FIXED' ? (
+              {isVerifiedStatus(mission.status) ? (
                 <a 
                   href={`/mirror/${mission.id}`}
                   className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-5 py-2 rounded font-sans text-xs font-bold transition-colors shadow-green-glow"

@@ -17,7 +17,7 @@ router.post('/missions/:id/mirror', authMiddleware, async (req, res) => {
     }
     const mission = missionRes.rows[0];
 
-    if (mission.status !== 'VERIFIED_FIXED') {
+    if (mission.status !== 'VERIFIED_FIXED' && mission.status !== 'VERIFIED') {
       return res.status(400).json({ error: 'SkillMirror activates only after the debugging session is completed.' });
     }
 

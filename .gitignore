@@ -13,16 +13,19 @@ out/
 # Database files
 devmirror.db
 devmirror.db-journal
+backend/devmirror.db
+backend/devmirror.db-journal
 
 # Environment configs
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Sandbox dynamic workspaces
 backend/sandbox/
+sandbox/
+backend/uploads/
+uploads/
 
 # System files
 .DS_Store

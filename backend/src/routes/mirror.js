@@ -1,263 +1,316 @@
 import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import { query } from '../db/connection.js';
 import authMiddleware from '../middleware/auth.js';
-import { 
-  generatePrepProfile, 
-  generateAdaptiveQuestion, 
-  generateMirrorReport 
-} from '../services/gemini.js';
+import {
+  generatePrepProfile,
+  generateAdaptiveQuestion,
+  generateMirrorReport,
+  analyzeLocalCommunication,
+  tensionBand
+} from '../services/mirrorAgent.js';
+import { extractProjectContext } from '../services/projectContext.js';
+import { BACKEND_ROOT } from '../config/env.js';
 
 const router = express.Router();
 
-// 1. Start a Mirror Preparation Session
-router.post('/sessions', authMiddleware, async (req, res) => {
-  const { prep_type, pasted_text, is_demo } = req.body;
+const uploadDir = path.join(BACKEND_ROOT, 'uploads', 'mirror-tmp');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-  if (!prep_type) {
-    return res.status(400).json({ error: 'prep_type is required.' });
-  }
-
-  try {
-    // Generate preparation profile using Gemini or local rules
-    const profile = await generatePrepProfile(prep_type, pasted_text);
-
-    // Save Mirror Session
-    const topicsStr = JSON.stringify(profile.topics || []);
-    const skillsStr = JSON.stringify(profile.skills || []);
-    const requirementsStr = JSON.stringify(profile.requirements || []);
-    const areasStr = JSON.stringify(profile.important_areas || []);
-
-    const sessionRes = await query(
-      `INSERT INTO mirror_sessions 
-       (user_id, prep_type, prep_title, topics, skills, requirements, difficulty, important_areas, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-       RETURNING *`,
-      [
-        req.user.id,
-        prep_type,
-        profile.prep_title || `Prep for ${prep_type}`,
-        topicsStr,
-        skillsStr,
-        requirementsStr,
-        profile.difficulty || 'medium',
-        areasStr,
-        'ACTIVE'
-      ]
-    );
-    const session = sessionRes.rows[0];
-
-    // Generate initial conversational question
-    const initialQuestionData = await generateAdaptiveQuestion(profile, []);
-    
-    // Save Initial Question Dialog
-    const dialogRes = await query(
-      'INSERT INTO mirror_dialogs (session_id, question_text) VALUES ($1, $2) RETURNING *',
-      [session.id, initialQuestionData.question_text]
-    );
-
-    res.status(201).json({
-      session,
-      profile,
-      initial_question: dialogRes.rows[0]
-    });
-
-  } catch (error) {
-    console.error('Error creating Mirror session:', error);
-    res.status(500).json({ error: 'Failed to initialize Mirror session: ' + error.message });
-  }
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 8 * 1024 * 1024 }
 });
 
-// 2. Submit Answer & Get Next Adapted Question
-router.post('/sessions/:id/submit-answer', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const { answer_text, input_mode, observational_signals } = req.body;
+function cleanupUpload(file) {
+  if (file?.path) {
+    try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+  }
+}
 
-  if (!answer_text) {
-    return res.status(400).json({ error: 'answer_text is required.' });
+async function getOwnedSession(id, userId) {
+  const sessionRes = await query('SELECT * FROM mirror_sessions WHERE id = $1 AND user_id = $2', [id, userId]);
+  return sessionRes.rows[0] || null;
+}
+
+function parseProfile(session) {
+  const parse = (v, fallback) => {
+    try { return JSON.parse(v || ''); } catch { return fallback; }
+  };
+  return {
+    prepType: session.prep_type,
+    prep_title: session.prep_title,
+    sessionType: session.session_mode || session.prep_type,
+    topics: parse(session.topics, []),
+    skills: parse(session.skills, []),
+    requirements: parse(session.requirements, []),
+    difficulty: session.difficulty,
+    important_areas: parse(session.important_areas, []),
+    projectContext: session.project_context || ''
+  };
+}
+
+async function fetchRow(table, id) {
+  const res = await query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
+  return res.rows[0] || { id };
+}
+
+function isFinishCommand(text) {
+  return /^(finish|end session|end)$/i.test(String(text || '').trim());
+}
+
+async function handleSubmitAnswer(req, res) {
+  const { id } = req.params;
+  const answer_text = req.body.answer_text || req.body.message || req.body.transcription;
+  const input_mode = req.body.input_mode || req.body.inputMode || 'text';
+  const observational_signals = req.body.observational_signals || (req.body.visualMetrics ? JSON.stringify(req.body.visualMetrics) : null);
+  const visualMetrics = req.body.visualMetrics || {};
+
+  if (!answer_text || !String(answer_text).trim()) {
+    return res.status(400).json({ error: 'A typed or transcribed response is required.' });
+  }
+
+  if (isFinishCommand(answer_text)) {
+    req.body = req.body || {};
+    return completeSession(req, res);
   }
 
   try {
-    // Check ownership
-    const sessionRes = await query('SELECT * FROM mirror_sessions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (sessionRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Mirror session not found.' });
-    }
-    const session = sessionRes.rows[0];
+    const session = await getOwnedSession(id, req.user.id);
+    if (!session) return res.status(404).json({ error: 'Mirror session not found.' });
 
-    // Locate current pending question
     const pendingRes = await query(
       'SELECT * FROM mirror_dialogs WHERE session_id = $1 AND answer_text IS NULL ORDER BY id DESC LIMIT 1',
       [id]
     );
-
     if (pendingRes.rows.length === 0) {
-      return res.status(400).json({ error: 'No active question found to answer. Please retrieve next question.' });
+      return res.status(400).json({ error: 'No active question. Please start or continue the session.' });
     }
     const pendingDialog = pendingRes.rows[0];
+    const local = analyzeLocalCommunication(answer_text);
 
-    // Update with answer details
     await query(
-      'UPDATE mirror_dialogs SET answer_text = $1, input_mode = $2, gaze_observational_signals = $3 WHERE id = $4',
-      [answer_text, input_mode || 'text', observational_signals || null, pendingDialog.id]
+      'UPDATE mirror_dialogs SET answer_text = $1, input_mode = $2, gaze_observational_signals = $3, communication_feedback = $4 WHERE id = $5',
+      [answer_text, input_mode, observational_signals || null, JSON.stringify({ local, visualMetrics }), pendingDialog.id]
     );
 
-    // Fetch conversation dialog history so far
     const dialogsRes = await query('SELECT * FROM mirror_dialogs WHERE session_id = $1 ORDER BY id ASC', [id]);
     const dialogs = dialogsRes.rows;
+    const profile = parseProfile(session);
 
-    // Build profile object for Gemini
-    const profile = {
-      prepType: session.prep_type,
-      prep_title: session.prep_title,
-      topics: JSON.parse(session.topics || '[]'),
-      skills: JSON.parse(session.skills || '[]'),
-      requirements: JSON.parse(session.requirements || '[]'),
-      difficulty: session.difficulty,
-      important_areas: JSON.parse(session.important_areas || '[]')
-    };
+    const nextQuestionData = await generateAdaptiveQuestion(profile, dialogs, { visualMetrics });
 
-    // Limit conversation size to 5 questions
-    if (dialogs.length >= 5) {
-      return res.json({
-        session_limit_reached: true,
-        message: 'Mirror session limits reached. You can now End Session to generate your reflection report.'
-      });
-    }
-
-    // Generate next adapted question
-    const nextQuestionData = await generateAdaptiveQuestion(profile, dialogs);
-
-    // Insert new pending dialog
     const newDialogRes = await query(
-      'INSERT INTO mirror_dialogs (session_id, question_text) VALUES ($1, $2) RETURNING *',
-      [id, nextQuestionData.question_text]
+      'INSERT INTO mirror_dialogs (session_id, question_text, communication_feedback) VALUES ($1, $2, $3) RETURNING *',
+      [id, nextQuestionData.question_text, JSON.stringify(nextQuestionData.feedback || {})]
     );
+    const nextQuestion = await fetchRow('mirror_dialogs', newDialogRes.rows[0].id);
 
     res.json({
       success: true,
-      next_question: newDialogRes.rows[0],
-      ava_remark: nextQuestionData.ava_remark
+      response: nextQuestionData.response || nextQuestionData.ava_remark || '',
+      nextQuestion,
+      next_question: nextQuestion,
+      ava_remark: nextQuestionData.ava_remark,
+      feedback: nextQuestionData.feedback || null,
+      communication: nextQuestionData.communication || null,
+      sessionState: {
+        questionsAsked: dialogs.length,
+        questionsAnswered: dialogs.filter((d) => d.answer_text).length,
+        tensionIndicator: tensionBand({ fillerCount: local.fillerCount, visual: visualMetrics })
+      }
     });
-
   } catch (error) {
-    console.error('Error submitting answer:', error);
-    res.status(500).json({ error: 'Failed to process answer.' });
+    const msg = error.code === 'AI_SERVICE_UNAVAILABLE'
+      ? 'Mirror AI is temporarily unavailable.'
+      : 'Failed to process answer.';
+    console.error('Error submitting Mirror answer:', error.message);
+    res.status(500).json({ error: msg });
+  }
+}
+
+router.post('/sessions', authMiddleware, upload.single('file'), async (req, res) => {
+  const prep_type = (req.body.prep_type || req.body.goal || req.body.preparationGoal || '').trim();
+  const pasted_text = req.body.pasted_text || req.body.projectContext || req.body.context || '';
+  const difficulty = req.body.difficulty || 'Intermediate';
+  const mode = req.body.mode || req.body.sessionType || '';
+
+  if (!prep_type) {
+    cleanupUpload(req.file);
+    return res.status(400).json({ error: 'Tell Ava what you are preparing for.' });
+  }
+
+  try {
+    const projectContext = extractProjectContext({
+      filePath: req.file?.path,
+      originalName: req.file?.originalname,
+      pastedText: pasted_text
+    });
+    cleanupUpload(req.file);
+
+    const profile = await generatePrepProfile(mode ? `${prep_type} (${mode})` : prep_type, projectContext);
+    if (difficulty) profile.difficulty = difficulty;
+    if (projectContext) profile.projectContext = projectContext;
+
+    const insert = await query(
+      `INSERT INTO mirror_sessions
+       (user_id, prep_type, prep_title, topics, skills, requirements, difficulty, important_areas, project_context, session_mode, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [
+        req.user.id,
+        prep_type,
+        profile.prep_title || `Prep for ${prep_type}`,
+        JSON.stringify(profile.topics || []),
+        JSON.stringify(profile.skills || []),
+        JSON.stringify(profile.requirements || []),
+        profile.difficulty || difficulty,
+        JSON.stringify(profile.important_areas || []),
+        projectContext || null,
+        mode || profile.sessionType || null,
+        'ACTIVE'
+      ]
+    );
+    const session = await fetchRow('mirror_sessions', insert.rows[0].id);
+
+    const initialQuestionData = await generateAdaptiveQuestion(parseProfile(session), []);
+    const dialogInsert = await query(
+      'INSERT INTO mirror_dialogs (session_id, question_text) VALUES ($1, $2) RETURNING *',
+      [session.id, initialQuestionData.question_text]
+    );
+    const initial_question = await fetchRow('mirror_dialogs', dialogInsert.rows[0].id);
+
+    res.status(201).json({
+      session,
+      profile,
+      initial_question,
+      response: initialQuestionData.response || initialQuestionData.ava_remark || '',
+      ava_remark: initialQuestionData.ava_remark
+    });
+  } catch (error) {
+    cleanupUpload(req.file);
+    const msg = error.code === 'AI_SERVICE_UNAVAILABLE'
+      ? 'Mirror AI is temporarily unavailable.'
+      : 'Failed to initialize Mirror session.';
+    console.error('Error creating Mirror session:', error.message);
+    res.status(500).json({ error: msg });
   }
 });
 
-// 3. End Session & Generate Mirror Report
-router.post('/sessions/:id/end', authMiddleware, async (req, res) => {
+router.post('/sessions/:id/submit-answer', authMiddleware, handleSubmitAnswer);
+router.post('/sessions/:id/message', authMiddleware, handleSubmitAnswer);
+router.post('/sessions/:id/voice', authMiddleware, handleSubmitAnswer);
+
+router.post('/sessions/:id/analyze', authMiddleware, async (req, res) => {
   const { id } = req.params;
+  const session = await getOwnedSession(id, req.user.id);
+  if (!session) return res.status(404).json({ error: 'Mirror session not found.' });
+  const visualMetrics = req.body.visualMetrics || req.body;
+  const last = await query(
+    'SELECT id FROM mirror_dialogs WHERE session_id = $1 ORDER BY id DESC LIMIT 1',
+    [id]
+  );
+  if (last.rows[0]) {
+    await query(
+      'UPDATE mirror_dialogs SET gaze_observational_signals = $1 WHERE id = $2',
+      [JSON.stringify(visualMetrics), last.rows[0].id]
+    );
+  }
+  res.json({ success: true, visualMetrics });
+});
 
+async function completeSession(req, res) {
+  const { id } = req.params;
   try {
-    const sessionRes = await query('SELECT * FROM mirror_sessions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (sessionRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Mirror session not found.' });
-    }
-    const session = sessionRes.rows[0];
+    const session = await getOwnedSession(id, req.user.id);
+    if (!session) return res.status(404).json({ error: 'Mirror session not found.' });
 
-    // Load completed dialogs
     const dialogsRes = await query(
       'SELECT * FROM mirror_dialogs WHERE session_id = $1 AND answer_text IS NOT NULL ORDER BY id ASC',
       [id]
     );
     const dialogs = dialogsRes.rows;
-
     if (dialogs.length === 0) {
       return res.status(400).json({ error: 'Please answer at least one question before ending the session.' });
     }
 
-    const profile = {
-      prepType: session.prep_type,
-      prep_title: session.prep_title,
-      topics: JSON.parse(session.topics || '[]'),
-      skills: JSON.parse(session.skills || '[]'),
-      requirements: JSON.parse(session.requirements || '[]'),
-      difficulty: session.difficulty,
-      important_areas: JSON.parse(session.important_areas || '[]')
-    };
+    const profile = parseProfile(session);
+    const lastSignals = dialogs[dialogs.length - 1]?.gaze_observational_signals;
+    let visualMetrics = {};
+    try { visualMetrics = lastSignals ? JSON.parse(lastSignals) : {}; } catch { visualMetrics = {}; }
 
-    console.log(`Generating Mirror Reflection Report for Session #${id}...`);
-    const report = await generateMirrorReport(profile, dialogs);
-
-    // Check if report already exists for this session
-    const existingReport = await query('SELECT id FROM mirror_reports WHERE session_id = $1', [id]);
-    if (existingReport.rows.length > 0) {
-      await query('DELETE FROM mirror_reports WHERE session_id = $1', [id]);
-    }
-
-    // Save report to DB
-    const reportRes = await query(
-      `INSERT INTO mirror_reports 
-       (session_id, communication_json, technical_json, presentation_json, strengths_json, weaknesses_json, next_challenge) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING *`,
+    const report = await generateMirrorReport(profile, dialogs, { visualMetrics });
+    await query('DELETE FROM mirror_reports WHERE session_id = $1', [id]);
+    const reportInsert = await query(
+      `INSERT INTO mirror_reports
+       (session_id, communication_json, technical_json, presentation_json, strengths_json, weaknesses_json, next_challenge)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         id,
         JSON.stringify(report.communication),
         JSON.stringify(report.technical),
-        JSON.stringify(report.presentation || null),
+        JSON.stringify({
+          scores: report.scores || {},
+          tensionIndicator: report.tensionIndicator,
+          practiceSuggestions: report.practiceSuggestions || [],
+          strongestArea: report.strongestArea,
+          improvementArea: report.improvementArea,
+          nextRecommendation: report.nextRecommendation,
+          label: 'AI communication coaching score'
+        }),
         JSON.stringify(report.strengths || []),
         JSON.stringify(report.development_areas || []),
         JSON.stringify(report.next_challenge || null)
       ]
     );
+    const saved = await fetchRow('mirror_reports', reportInsert.rows[0].id);
+    await query("UPDATE mirror_sessions SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
 
-    // Update session status to COMPLETED
-    await query("UPDATE mirror_sessions SET status = 'COMPLETED' WHERE id = $1", [id]);
-
-    res.json({
-      success: true,
-      report: reportRes.rows[0]
-    });
-
+    res.json({ success: true, report: saved, analysis: report });
   } catch (error) {
-    console.error('Error ending Mirror session:', error);
-    res.status(500).json({ error: 'Failed to generate Mirror reflection: ' + error.message });
+    const msg = error.code === 'AI_SERVICE_UNAVAILABLE'
+      ? 'Mirror AI is temporarily unavailable.'
+      : 'Failed to generate Mirror reflection.';
+    console.error('Error ending Mirror session:', error.message);
+    res.status(500).json({ error: msg });
   }
-});
+}
 
-// 4. List user Mirror Sessions
+router.post('/sessions/:id/end', authMiddleware, completeSession);
+router.post('/sessions/:id/complete', authMiddleware, completeSession);
+
 router.get('/sessions', authMiddleware, async (req, res) => {
   try {
     const listRes = await query(
-      `SELECT ms.*, 
+      `SELECT ms.*,
        (SELECT COUNT(*) FROM mirror_dialogs WHERE session_id = ms.id AND answer_text IS NOT NULL) as answered_count
        FROM mirror_sessions ms
-       WHERE ms.user_id = $1 
+       WHERE ms.user_id = $1
        ORDER BY ms.id DESC`,
       [req.user.id]
     );
     res.json(listRes.rows);
   } catch (error) {
-    console.error('Error listing Mirror sessions:', error);
+    console.error('Error listing Mirror sessions:', error.message);
     res.status(500).json({ error: 'Failed to list Mirror history.' });
   }
 });
 
-// 5. Get Session details & Report
 router.get('/sessions/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
+  const session = await getOwnedSession(req.params.id, req.user.id);
+  if (!session) return res.status(404).json({ error: 'Mirror session not found.' });
+  const dialogsRes = await query('SELECT * FROM mirror_dialogs WHERE session_id = $1 ORDER BY id ASC', [req.params.id]);
+  const reportRes = await query('SELECT * FROM mirror_reports WHERE session_id = $1', [req.params.id]);
+  res.json({ session, dialogs: dialogsRes.rows, report: reportRes.rows[0] || null });
+});
 
-  try {
-    const sessionRes = await query('SELECT * FROM mirror_sessions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    if (sessionRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Mirror session not found.' });
-    }
-    const session = sessionRes.rows[0];
-
-    const dialogsRes = await query('SELECT * FROM mirror_dialogs WHERE session_id = $1 ORDER BY id ASC', [id]);
-    const reportRes = await query('SELECT * FROM mirror_reports WHERE session_id = $1', [id]);
-
-    res.json({
-      session,
-      dialogs: dialogsRes.rows,
-      report: reportRes.rows[0] || null
-    });
-  } catch (error) {
-    console.error('Error getting Mirror details:', error);
-    res.status(500).json({ error: 'Failed to retrieve Mirror session details.' });
-  }
+router.get('/sessions/:id/report', authMiddleware, async (req, res) => {
+  const session = await getOwnedSession(req.params.id, req.user.id);
+  if (!session) return res.status(404).json({ error: 'Report not found.' });
+  const reportRes = await query('SELECT * FROM mirror_reports WHERE session_id = $1', [req.params.id]);
+  if (!reportRes.rows[0]) return res.status(404).json({ error: 'Report not ready. End the session first.' });
+  res.json(reportRes.rows[0]);
 });
 
 export default router;

@@ -5,15 +5,20 @@ import multer from 'multer';
 import AdmZip from 'adm-zip';
 import { query } from '../db/connection.js';
 import authMiddleware from '../middleware/auth.js';
-import { analyzeBug } from '../services/gemini.js';
 import { runInSandbox } from '../services/sandbox.js';
 import { runDebugAgent } from '../services/agent.js';
+import { recordEvent, setMissionStatus, MISSION_STATUS } from '../services/agentEvents.js';
+import { createWorkspace, shouldIgnoreEntry, syncFilesToWorkspace, writeWorkspaceFile } from '../services/workspace.js';
+
+import { BACKEND_ROOT } from '../config/env.js';
 
 const router = express.Router();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(process.cwd(), 'uploads'));
+    const dir = path.join(BACKEND_ROOT, 'uploads');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -60,15 +65,8 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
       for (const entry of zipEntries) {
         if (entry.isDirectory) continue;
         
-        const entryName = entry.entryName;
-        // Exclude dangerous files, node_modules, .git, etc.
-        if (
-          entryName.includes('node_modules') || 
-          entryName.includes('.git') || 
-          entryName.includes('.env') ||
-          entryName.includes('__pycache__') ||
-          entryName.includes('.DS_Store')
-        ) {
+        const entryName = entry.entryName.replace(/\\/g, '/');
+        if (entryName.includes('..') || path.isAbsolute(entryName) || shouldIgnoreEntry(entryName)) {
           continue;
         }
 
@@ -80,8 +78,9 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
         }
 
         const fileContent = entry.getData().toString('utf8');
-        
-        // Store/update file in DB
+        createWorkspace(id);
+        try { writeWorkspaceFile(id, entryName, fileContent); } catch { continue; }
+
         const existing = await query('SELECT id FROM mission_files WHERE mission_id = $1 AND filename = $2', [id, entryName]);
         if (existing.rows.length > 0) {
           await query('UPDATE mission_files SET file_content = $1 WHERE id = $2', [fileContent, existing.rows[0].id]);
@@ -94,6 +93,8 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
       // Cleanup uploaded zip temp file
       fs.unlinkSync(filepath);
 
+      await recordEvent(id, 'evidence_received', `Successfully extracted and loaded ${fileCount} files from ZIP.`, { fileCount });
+      await setMissionStatus(id, MISSION_STATUS.COLLECTING_EVIDENCE);
       await logAgentEvent(id, 'ORCHESTRATOR', `Successfully extracted and loaded ${fileCount} files from ZIP.`, 'evidence', 'success');
       return res.json({ success: true, type: 'zip', fileCount, message: `Loaded ${fileCount} project files.` });
     }
@@ -103,6 +104,8 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
     if (imageExtensions.includes(ext)) {
       const publicPath = `/uploads/${path.basename(filepath)}`;
       await query('UPDATE missions SET screenshot_path = $1 WHERE id = $2', [publicPath, id]);
+      await recordEvent(id, 'evidence_received', `Screenshot uploaded: ${filename}`, { type: 'image' });
+      await setMissionStatus(id, MISSION_STATUS.COLLECTING_EVIDENCE);
       await logAgentEvent(id, 'ORCHESTRATOR', `Screenshot uploaded: ${filename}`, 'evidence', 'success');
       return res.json({ success: true, type: 'image', path: publicPath, message: 'Screenshot added.' });
     }
@@ -119,10 +122,13 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
       } else {
         await query('INSERT INTO mission_files (mission_id, filename, file_content, is_original) VALUES ($1, $2, $3, 1)', [id, filename, fileContent]);
       }
-      
-      // Cleanup temp file
+
+      createWorkspace(id);
+      writeWorkspaceFile(id, filename, fileContent);
       fs.unlinkSync(filepath);
 
+      await recordEvent(id, 'evidence_received', `Source file uploaded: ${filename}`, { filename });
+      await setMissionStatus(id, MISSION_STATUS.COLLECTING_EVIDENCE);
       await logAgentEvent(id, 'ORCHESTRATOR', `Source file uploaded: ${filename}`, 'evidence', 'success');
       return res.json({ success: true, type: 'file', message: `Source file ${filename} added.` });
     }
@@ -143,24 +149,28 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
 // 1. Create a debug mission
 router.post('/', authMiddleware, async (req, res) => {
   const { voice_transcript, problem_description, input_mode = 'text', isDemo, language = 'javascript' } = req.body;
-  const description = problem_description || voice_transcript || 'My login request is failing.';
+  const description = String(problem_description || voice_transcript || '').trim();
+  if (!description) {
+    return res.status(400).json({ error: 'NEEDS MORE EVIDENCE', message: 'A problem description is required.' });
+  }
 
   try {
-    // Insert mission
     const missionRes = await query(
       'INSERT INTO missions (user_id, voice_transcript, status, language, input_mode) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, description, 'INVESTIGATING', language, input_mode]
+      [req.user.id, description, MISSION_STATUS.CREATED, language, input_mode]
     );
-    const mission = missionRes.rows[0];
+    const missionId = missionRes.rows[0].id;
+    const missionFetch = await query('SELECT * FROM missions WHERE id = $1', [missionId]);
+    const mission = missionFetch.rows[0] || missionRes.rows[0];
 
-    // Log initialization event
-    await logAgentEvent(mission.id, 'ORCHESTRATOR', 'Initialized debugging session #DM-' + mission.id, 'init', 'success');
+    await recordEvent(mission.id, 'mission_created', `Initialized debugging session #DM-${mission.id}`, { agentName: 'ORCHESTRATOR', input_mode });
     await logAgentEvent(mission.id, 'ORCHESTRATOR', 'Ready to accept code evidence.', 'status', 'success');
+    createWorkspace(mission.id);
 
     // If it's a demo, load the broken authHelper files automatically
     if (isDemo) {
       console.log(`Setting up Demo Project files for Mission #${mission.id}...`);
-      const demoDir = path.join(process.cwd(), 'demo_project');
+      const demoDir = path.join(BACKEND_ROOT, 'demo_project');
       
       const fileNames = ['package.json', 'authHelper.js', 'test.js'];
       for (const name of fileNames) {
@@ -171,7 +181,13 @@ router.post('/', authMiddleware, async (req, res) => {
         );
       }
       
-      await logAgentEvent(mission.id, 'ORCHESTRATOR', 'Demo project files (React + Node) loaded successfully.', 'evidence', 'success');
+      await recordEvent(mission.id, 'evidence_received', 'Project files loaded from demo_project directory.', { files: fileNames });
+      await setMissionStatus(mission.id, MISSION_STATUS.COLLECTING_EVIDENCE);
+      const loaded = fileNames.map((name) => ({
+        filename: name,
+        file_content: fs.readFileSync(path.join(demoDir, name), 'utf8')
+      }));
+      syncFilesToWorkspace(mission.id, loaded);
     }
 
     res.status(201).json(mission);
@@ -267,6 +283,10 @@ router.post('/:id/files', authMiddleware, async (req, res) => {
       );
     }
 
+    createWorkspace(id);
+    writeWorkspaceFile(id, filename, file_content);
+    await recordEvent(id, 'evidence_received', `Evidence uploaded: ${filename}`, { filename });
+    await setMissionStatus(id, MISSION_STATUS.COLLECTING_EVIDENCE);
     await logAgentEvent(id, 'ORCHESTRATOR', `Evidence uploaded: ${filename}`, 'evidence', 'success');
 
     res.status(201).json({ success: true, message: 'Evidence file uploaded.' });
@@ -301,16 +321,37 @@ router.delete('/:id/files/:fileId', authMiddleware, async (req, res) => {
   }
 });
 
-// 6. Analyze mission via AI agent (runs the general-purpose autonomous loop!)
-router.post('/:id/analyze', authMiddleware, async (req, res) => {
+async function investigateHandler(req, res) {
   const { id } = req.params;
-
   try {
+    const missionCheck = await query('SELECT id FROM missions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (missionCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Mission not found.' });
+    }
     const result = await runDebugAgent(id);
-    res.json(result);
+    const statusCode = result.status === 'NEEDS_INPUT' ? 400 : 200;
+    res.status(statusCode).json(result);
   } catch (error) {
-    console.error('Analysis error:', error);
-    res.status(500).json({ error: 'Failed to analyze files: ' + error.message });
+    console.error('Investigation error:', error);
+    res.status(500).json({ error: 'Failed to investigate: ' + error.message });
+  }
+}
+
+router.post('/:id/investigate', authMiddleware, investigateHandler);
+router.post('/:id/analyze', authMiddleware, investigateHandler);
+
+router.get('/:id/events', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const missionCheck = await query('SELECT id FROM missions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (missionCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Mission not found.' });
+    }
+    const eventsRes = await query('SELECT * FROM agent_events WHERE mission_id = $1 ORDER BY timestamp ASC, id ASC', [id]);
+    res.json(eventsRes.rows);
+  } catch (error) {
+    console.error('Events error:', error);
+    res.status(500).json({ error: 'Failed to load events.' });
   }
 });
 

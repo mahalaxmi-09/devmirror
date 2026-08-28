@@ -30,6 +30,15 @@ export const initDb = async () => {
     try {
       await pgPool.query("ALTER TABLE missions ADD COLUMN input_mode VARCHAR(50) DEFAULT 'text'");
     } catch (e) {}
+    try {
+      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
+    } catch (e) {}
+    try {
+      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN session_mode VARCHAR(50)');
+    } catch (e) {}
+    try {
+      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN completed_at TIMESTAMP');
+    } catch (e) {}
   } else {
     console.log('Using SQLite fallback database...');
     const dbPath = path.resolve(process.cwd(), 'devmirror.db');
@@ -40,6 +49,9 @@ export const initDb = async () => {
     await createTablesSqlite();
     dbInstance.run('ALTER TABLE missions ADD COLUMN screenshot_path TEXT', (err) => {});
     dbInstance.run("ALTER TABLE missions ADD COLUMN input_mode TEXT DEFAULT 'text'", (err) => {});
+    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT', () => {});
+    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN session_mode TEXT', () => {});
+    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN completed_at DATETIME', () => {});
   }
 };
 
@@ -153,8 +165,11 @@ const createTablesPostgres = async () => {
       requirements TEXT,
       difficulty VARCHAR(50) DEFAULT 'medium',
       important_areas TEXT,
+      project_context TEXT,
+      session_mode VARCHAR(50),
       status VARCHAR(50) DEFAULT 'ACTIVE',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      completed_at TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS mirror_dialogs (
       id SERIAL PRIMARY KEY,
@@ -319,8 +334,11 @@ const createTablesSqlite = () => {
         requirements TEXT,
         difficulty TEXT DEFAULT 'medium',
         important_areas TEXT,
+        project_context TEXT,
+        session_mode TEXT,
         status TEXT DEFAULT 'ACTIVE',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )`);
 
@@ -360,8 +378,7 @@ export const query = (text, params = []) => {
   if (isPostgres) {
     return pgPool.query(text, params);
   } else {
-    // Normalise postgres parameter symbols ($1, $2) to SQLite symbols (?, ?)
-    let sqliteSql = text;
+    let sqliteSql = text.replace(/\$(\d+)/g, '?');
     // Replace serial / auto_increment differences if any (not needed since we create tables separately)
     // Run SQLite query
     return new Promise((resolve, reject) => {
