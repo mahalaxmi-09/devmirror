@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+.svelte-kit
+.next
+out/
+
+# Database files
+devmirror.db
+devmirror.db-journal
+
+# Environment configs
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Sandbox dynamic workspaces
+backend/sandbox/
+
+# System files
+.DS_Store
+Thumbs.db

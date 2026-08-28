@@ -1,0 +1,14 @@
+{
+  "name": "devmirror-ai",
+  "version": "1.0.0",
+  "description": "DevMirror AI - Debug. Reflect. Improve.",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev": "concurrently \"npm run start --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start:backend": "npm start --prefix backend",
+    "start:frontend": "npm run dev --prefix frontend"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

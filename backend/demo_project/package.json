@@ -1,0 +1,9 @@
+{
+  "name": "devmirror-auth-demo",
+  "version": "1.0.0",
+  "description": "Auth Helper Demo Project",
+  "main": "authHelper.js",
+  "scripts": {
+    "test": "node test.js"
+  }
+}
