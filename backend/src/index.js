@@ -35,21 +35,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/ai/health', async (req, res) => {
   try {
     const result = await pingSelectedProvider();
-    if (result.status === 'connected') {
-      const payload = {
-        provider: result.provider,
-        status: 'connected',
-        model: result.model
-      };
-      if (result.provider === 'gemini') payload.gemini = 'connected';
-      return res.json(payload);
-    }
-    const payload = {
-      provider: result.provider,
-      status: 'unavailable'
-    };
-    if (result.provider === 'gemini') payload.gemini = 'unavailable';
-    return res.json(payload);
+    return res.json(result);
   } catch {
     res.json({ provider: process.env.AI_PROVIDER || 'gemini', status: 'unavailable' });
   }

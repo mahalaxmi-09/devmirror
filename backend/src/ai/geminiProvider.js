@@ -56,7 +56,7 @@ export class GeminiProvider extends AIProvider {
       } catch (err) {
         lastError = err;
         const msg = String(err.message || '');
-        const retryable = /not found|NOT_FOUND|invalid argument|UNAVAILABLE|high demand|503|404|overloaded/i.test(msg);
+        const retryable = /not found|NOT_FOUND|invalid argument|UNAVAILABLE|high demand|503|404|overloaded|429|quota|rate limit/i.test(msg);
         if (!retryable) break;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }

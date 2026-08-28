@@ -246,7 +246,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
       setAvaRemark(response.data.ava_remark || response.data.response || "Let's get started.");
       setStage('profile');
     } catch (err) {
-      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable.');
+      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable. Check that a valid AI API key is set in backend/.env (Gemini, OpenAI, or Anthropic).');
     } finally {
       setLoading(false);
       setLoadingStep('');
@@ -329,7 +329,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
       speechBaseRef.current = '';
       setInputMode('text');
     } catch (err) {
-      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable.');
+      setErrorBanner(err.response?.data?.error || 'Mirror AI is temporarily unavailable. Check that a valid AI API key is set in backend/.env (Gemini, OpenAI, or Anthropic).');
       setAvaStatus('Listening');
     } finally {
       setLoading(false);
