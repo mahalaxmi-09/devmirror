@@ -102,7 +102,16 @@ export function parseModelJson(text) {
   if (!cleaned) {
     throw new AIProviderError('Empty model response', { code: 'AI_SERVICE_UNAVAILABLE' });
   }
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    }
+    throw new AIProviderError('Invalid JSON from model', { code: 'AI_SERVICE_UNAVAILABLE' });
+  }
 }
 
 export function toolCallResponse(toolCalls, message = '') {

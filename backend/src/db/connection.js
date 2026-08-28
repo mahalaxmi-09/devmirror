@@ -47,11 +47,14 @@ export const initDb = async () => {
     console.log(`SQLite database file loaded: ${dbPath}`);
     
     await createTablesSqlite();
-    dbInstance.run('ALTER TABLE missions ADD COLUMN screenshot_path TEXT', (err) => {});
-    dbInstance.run("ALTER TABLE missions ADD COLUMN input_mode TEXT DEFAULT 'text'", (err) => {});
-    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT', () => {});
-    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN session_mode TEXT', () => {});
-    dbInstance.run('ALTER TABLE mirror_sessions ADD COLUMN completed_at DATETIME', () => {});
+    const sqliteAlter = (sql) => new Promise((resolve) => {
+      dbInstance.run(sql, () => resolve());
+    });
+    await sqliteAlter('ALTER TABLE missions ADD COLUMN screenshot_path TEXT');
+    await sqliteAlter("ALTER TABLE missions ADD COLUMN input_mode TEXT DEFAULT 'text'");
+    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
+    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN session_mode TEXT');
+    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN completed_at DATETIME');
   }
 };
 

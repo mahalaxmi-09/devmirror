@@ -5,11 +5,12 @@ import path from 'path';
 import { query } from '../db/connection.js';
 import authMiddleware from '../middleware/auth.js';
 import {
-  generatePrepProfile,
+  generateSessionStart,
   generateAdaptiveQuestion,
   generateMirrorReport,
   analyzeLocalCommunication,
-  tensionBand
+  tensionBand,
+  transcriptDerivedReport
 } from '../services/mirrorAgent.js';
 import { extractProjectContext } from '../services/projectContext.js';
 import { BACKEND_ROOT } from '../config/env.js';
@@ -57,7 +58,15 @@ async function fetchRow(table, id) {
   return res.rows[0] || { id };
 }
 
-function isFinishCommand(text) {
+function normalizeCoachingScores(scores = {}) {
+  const entries = Object.entries(scores).filter(([, v]) => typeof v === 'number' && !Number.isNaN(v));
+  if (!entries.length) return scores;
+  const max = Math.max(...entries.map(([, v]) => v));
+  if (max <= 10) {
+    return Object.fromEntries(entries.map(([k, v]) => [k, Math.round(v * 10)]));
+  }
+  return scores;
+}
   return /^(finish|end session|end)$/i.test(String(text || '').trim());
 }
 
@@ -150,8 +159,26 @@ router.post('/sessions', authMiddleware, upload.single('file'), async (req, res)
     });
     cleanupUpload(req.file);
 
-    const profile = await generatePrepProfile(mode ? `${prep_type} (${mode})` : prep_type, projectContext);
-    if (difficulty) profile.difficulty = difficulty;
+    const started = await generateSessionStart(
+      mode ? `${prep_type} (${mode})` : prep_type,
+      projectContext,
+      difficulty,
+      mode
+    );
+    const profile = {
+      prep_title: started.prep_title,
+      sessionType: started.sessionType,
+      topics: started.topics || [],
+      skills: started.skills || [],
+      requirements: started.requirements || [],
+      difficulty: started.difficulty || difficulty,
+      important_areas: started.important_areas || [],
+      sessionObjective: started.sessionObjective,
+      projectContext
+    };
+    if (!started.question_text) {
+      throw Object.assign(new Error('Mirror AI is temporarily unavailable.'), { code: 'AI_SERVICE_UNAVAILABLE' });
+    }
     if (projectContext) profile.projectContext = projectContext;
 
     const insert = await query(
@@ -174,10 +201,9 @@ router.post('/sessions', authMiddleware, upload.single('file'), async (req, res)
     );
     const session = await fetchRow('mirror_sessions', insert.rows[0].id);
 
-    const initialQuestionData = await generateAdaptiveQuestion(parseProfile(session), []);
     const dialogInsert = await query(
       'INSERT INTO mirror_dialogs (session_id, question_text) VALUES ($1, $2) RETURNING *',
-      [session.id, initialQuestionData.question_text]
+      [session.id, started.question_text]
     );
     const initial_question = await fetchRow('mirror_dialogs', dialogInsert.rows[0].id);
 
@@ -185,8 +211,8 @@ router.post('/sessions', authMiddleware, upload.single('file'), async (req, res)
       session,
       profile,
       initial_question,
-      response: initialQuestionData.response || initialQuestionData.ava_remark || '',
-      ava_remark: initialQuestionData.ava_remark
+      response: started.response || started.ava_remark || '',
+      ava_remark: started.ava_remark
     });
   } catch (error) {
     cleanupUpload(req.file);
@@ -240,8 +266,14 @@ async function completeSession(req, res) {
     let visualMetrics = {};
     try { visualMetrics = lastSignals ? JSON.parse(lastSignals) : {}; } catch { visualMetrics = {}; }
 
-    const report = await generateMirrorReport(profile, dialogs, { visualMetrics });
-    await query('DELETE FROM mirror_reports WHERE session_id = $1', [id]);
+    let report;
+    try {
+      report = await generateMirrorReport(profile, dialogs, { visualMetrics });
+    } catch (error) {
+      if (error.code !== 'AI_SERVICE_UNAVAILABLE') throw error;
+      report = transcriptDerivedReport(profile, dialogs, { visualMetrics });
+    }
+    report.scores = normalizeCoachingScores(report.scores || {});
     const reportInsert = await query(
       `INSERT INTO mirror_reports
        (session_id, communication_json, technical_json, presentation_json, strengths_json, weaknesses_json, next_challenge)
@@ -257,7 +289,9 @@ async function completeSession(req, res) {
           strongestArea: report.strongestArea,
           improvementArea: report.improvementArea,
           nextRecommendation: report.nextRecommendation,
-          label: 'AI communication coaching score'
+          label: report.reportSource === 'transcript-derived'
+            ? 'Transcript-derived communication indicators (full AI report unavailable)'
+            : 'AI communication coaching score'
         }),
         JSON.stringify(report.strengths || []),
         JSON.stringify(report.development_areas || []),

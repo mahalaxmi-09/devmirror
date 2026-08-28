@@ -58,6 +58,7 @@ export class GeminiProvider extends AIProvider {
         const msg = String(err.message || '');
         const retryable = /not found|NOT_FOUND|invalid argument|UNAVAILABLE|high demand|503|404|overloaded/i.test(msg);
         if (!retryable) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
     throw new AIProviderError(sanitizeProviderError(lastError?.message || 'AI_PROVIDER_ERROR'), { provider: 'gemini' });
@@ -145,9 +146,11 @@ export class GeminiProvider extends AIProvider {
     const response = await this.generateContent(prompt, {
       systemInstruction,
       responseMimeType: 'application/json',
-      maxOutputTokens: 2048
+      maxOutputTokens: 4096
     });
-    return parseModelJson(response.text);
+    const text = response.text
+      || (response.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    return parseModelJson(text);
   }
 
   async generateDiagnosis(context) {

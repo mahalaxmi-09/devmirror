@@ -5,7 +5,7 @@ export async function generateStructuredJson(prompt, systemInstruction) {
   let provider;
   try {
     provider = getAIProvider();
-  } catch (err) {
+  } catch {
     const wrapped = new Error('Mirror AI is temporarily unavailable.');
     wrapped.code = 'AI_SERVICE_UNAVAILABLE';
     throw wrapped;
@@ -17,12 +17,15 @@ export async function generateStructuredJson(prompt, systemInstruction) {
     throw wrapped;
   }
 
+  let lastError;
   try {
     return await provider.generateJson(prompt, systemInstruction);
   } catch (err) {
+    lastError = err;
+    console.error('Structured JSON generation failed:', String(err?.message || 'unknown').slice(0, 180));
     const wrapped = new Error('Mirror AI is temporarily unavailable.');
     wrapped.code = 'AI_SERVICE_UNAVAILABLE';
-    wrapped.cause = err instanceof AIProviderError ? err : undefined;
+    wrapped.cause = lastError;
     throw wrapped;
   }
 }
