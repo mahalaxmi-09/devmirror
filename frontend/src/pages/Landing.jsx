@@ -116,6 +116,7 @@ const Landing = () => {
                   controls
                   poster="https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=800&q=80"
                 >
+                  <source src="/devmirror_preview.mp4" type="video/mp4" />
                   <source 
                     src="https://assets.mixkit.co/videos/preview/mixkit-code-code-on-a-computer-screen-close-up-34223-large.mp4" 
                     type="video/mp4" 
