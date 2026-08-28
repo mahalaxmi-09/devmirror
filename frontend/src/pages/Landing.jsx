@@ -89,80 +89,40 @@ const Landing = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8 }}
-              className="bg-panel-default border border-border-default rounded-lg p-5 font-mono text-[11px] sm:text-xs text-text-secondary relative overflow-hidden green-glow"
+              className="bg-panel-default border border-border-default rounded-lg overflow-hidden relative green-glow"
             >
-              {/* Terminal header */}
-              <div className="flex items-center justify-between border-b border-border-default pb-3.5 mb-4">
+              {/* Terminal Title Bar */}
+              <div className="flex items-center justify-between bg-bg-secondary px-4 py-3 border-b border-border-default">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500/40" />
                   <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
-                  <span className="text-[10px] text-text-muted ml-2">agent_session_DM-9481.log</span>
+                  <span className="text-[10px] font-mono text-text-muted ml-2">devmirror_ai_preview.mp4</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-brand-primary">
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
-                  <span className="text-[10px] uppercase font-bold">Live sandbox</span>
+                  <span className="text-[10px] uppercase font-mono font-bold">Preview Playback</span>
                 </div>
               </div>
 
-              {/* Data Flow timeline */}
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <div className="text-text-muted font-bold">🎙️ Voice Request</div>
-                  <div className="text-text-primary bg-bg-secondary p-2.5 rounded border border-border-default/50">
-                    &quot;My login API returns 401 validation exceptions.&quot;
-                  </div>
-                </div>
-
-                <div className="text-brand-primary flex items-center gap-2">
-                  <span>↓</span>
-                  <span className="text-text-muted">AI Agent initialized</span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-text-muted font-bold">🧠 AI Agent</div>
-                  <div className="text-brand-accent">
-                    Inspecting authentication flow and tracing headers...
-                  </div>
-                </div>
-
-                <div className="text-brand-primary flex items-center gap-2">
-                  <span>↓</span>
-                  <span className="text-text-muted">Analyzing source files</span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-text-muted font-bold">🔍 Root Cause</div>
-                  <div className="text-yellow-400 bg-yellow-950/20 border border-yellow-500/20 p-2.5 rounded">
-                    Token parameter retrieved from body instead of request headers.
-                  </div>
-                </div>
-
-                <div className="text-brand-primary flex items-center gap-2">
-                  <span>↓</span>
-                  <span className="text-text-muted">Patch generated</span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-text-muted font-bold">🛠️ Patch Verification</div>
-                  <div className="text-brand-primary flex items-center gap-1.5">
-                    <CheckCircle2 size={14} /> Verification passed: 8/8 tests succeeded. exit code 0
-                  </div>
-                </div>
-
-                <div className="text-brand-primary flex items-center gap-2">
-                  <span>↓</span>
-                  <span className="text-text-muted">SkillMirror calculation active</span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-text-muted font-bold">🪞 SkillMirror</div>
-                  <div className="text-text-primary">
-                    Estimated signals: Communication 82% | Debugging 90%
-                  </div>
-                </div>
+              {/* Video Player */}
+              <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+                <video
+                  className="w-full h-full object-cover"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  controls
+                  poster="https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=800&q=80"
+                >
+                  <source 
+                    src="https://assets.mixkit.co/videos/preview/mixkit-code-code-on-a-computer-screen-close-up-34223-large.mp4" 
+                    type="video/mp4" 
+                  />
+                  Your browser does not support the video tag.
+                </video>
               </div>
-
             </motion.div>
           </div>
 
