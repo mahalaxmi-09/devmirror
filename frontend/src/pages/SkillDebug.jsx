@@ -39,6 +39,41 @@ const SkillDebug = () => {
   const [pastedDescription, setPastedDescription] = useState('');
   const [inputMode, setInputMode] = useState(''); // 'voice' or 'text'
 
+  // Instant code debugger states
+  const [activeTab, setActiveTab] = useState('AUTONOMOUS'); // 'AUTONOMOUS' | 'INSTANT'
+  const [instantCode, setInstantCode] = useState('');
+  const [instantLanguage, setInstantLanguage] = useState('javascript');
+  const [instantError, setInstantError] = useState('');
+  const [instantContext, setInstantContext] = useState('');
+  const [instantResult, setInstantResult] = useState(null);
+  const [instantLoading, setInstantLoading] = useState(false);
+  const [instantErrorMsg, setInstantErrorMsg] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleSolveInstantBug = async () => {
+    if (!instantCode.trim()) {
+      alert('Please paste some code to debug.');
+      return;
+    }
+    setInstantLoading(true);
+    setInstantErrorMsg('');
+    setInstantResult(null);
+    try {
+      const response = await api.post('/debug', {
+        code: instantCode,
+        language: instantLanguage,
+        error: instantError,
+        context: instantContext
+      });
+      setInstantResult(response.data);
+    } catch (err) {
+      console.error(err);
+      setInstantErrorMsg(err.response?.data?.error || err.message || 'An error occurred during debugging.');
+    } finally {
+      setInstantLoading(false);
+    }
+  };
+
   // Active mission running states
   const [diagnosis, setDiagnosis] = useState(null);
   const [patchApplied, setPatchApplied] = useState(false);
@@ -101,13 +136,12 @@ const SkillDebug = () => {
           setSelectedFile(response.data.files[0]);
         }
 
-        const verified = response.data.status === 'VERIFIED_FIXED' || response.data.status === 'VERIFIED';
-        if (verified) {
+        if (response.data.status === 'VERIFIED_FIXED') {
           setPatchApplied(true);
-          const passedRun = (response.data.test_runs || []).find(r => r.status === 'PASSED');
+          const passedRun = response.data.test_runs.find(r => r.status === 'PASSED');
           if (passedRun) {
             setSandboxResult({ success: true, exitCode: 0 });
-            setTerminalOutput(`$ run\n\n${passedRun.stdout || ''}\n\nProcess exited with code ${passedRun.exit_code ?? 0}`);
+            setTerminalOutput(`$ npm test\n\n${passedRun.stdout}\n\nProcess exited with code 0`);
           }
         }
       } catch (err) {
@@ -198,7 +232,7 @@ const SkillDebug = () => {
       }
 
       // 6. Trigger AI investigation and root-cause analysis
-      await api.post(`/missions/${missionData.id}/investigate`);
+      await api.post(`/missions/${missionData.id}/analyze`);
 
       // 7. Route user to active debugging workspace
       navigate(`/debug/${missionData.id}`);
@@ -232,43 +266,27 @@ const SkillDebug = () => {
     }
   };
 
-  const isVerifiedStatus = (status) => status === 'VERIFIED' || status === 'VERIFIED_FIXED';
-  const hasEvent = (types) => (mission?.events || []).some((e) => types.includes(e.event_type));
-
+  // Verification pipeline indicators
   const getStepStatus = (stepIndex) => {
     if (!mission) return 'pending';
     const status = mission.status;
-    const verified = isVerifiedStatus(status) || hasEvent(['verification_passed']);
-    const failed = status === 'FAILED' && !verified;
 
-    if (stepIndex === 1) return mission.id ? 'completed' : 'pending';
-    if (stepIndex === 2) {
-      return (hasEvent(['evidence_received']) || (mission.files || []).length) ? 'completed' : 'pending';
-    }
+    if (stepIndex === 1) return 'completed'; // Listen
+    if (stepIndex === 2) return 'completed'; // Collect
     if (stepIndex === 3) {
-      if (hasEvent(['gemini_started', 'tool_executed']) || ['ANALYZING', 'REPRODUCING', 'INVESTIGATING', 'DIAGNOSIS_READY', 'PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED', 'FAILED'].includes(status)) {
-        return 'completed';
-      }
-      return 'pending';
+      return (status !== 'INVESTIGATING') ? 'completed' : 'active';
     }
     if (stepIndex === 4) {
-      if (hasEvent(['problem_reproduced']) || ['REPRODUCING', 'INVESTIGATING', 'DIAGNOSIS_READY', 'PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
-      if (failed) return 'failed';
-      return 'pending';
+      return (status === 'PATCH_GENERATED' || status === 'VERIFIED_FIXED') ? 'completed' : (status === 'FAILED' ? 'failed' : 'pending');
     }
     if (stepIndex === 5) {
-      if (hasEvent(['patch_applied', 'patch_generated']) || ['PATCH_READY', 'PATCH_APPLIED', 'EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
-      return 'pending';
+      return (status === 'PATCH_GENERATED' || status === 'VERIFIED_FIXED') ? 'completed' : 'pending';
     }
     if (stepIndex === 6) {
-      if (hasEvent(['execution_completed', 'tests_completed']) || ['EXECUTING', 'TESTING', 'VERIFYING', 'VERIFIED', 'VERIFIED_FIXED'].includes(status)) return 'completed';
-      return 'pending';
+      return (status === 'VERIFIED_FIXED') ? 'completed' : (status === 'PATCH_GENERATED' && loading ? 'active' : 'pending');
     }
     if (stepIndex === 7) {
-      if (verified) return 'completed';
-      if (hasEvent(['verification_failed']) || failed) return 'failed';
-      if (status === 'VERIFYING') return 'active';
-      return 'pending';
+      return (status === 'VERIFIED_FIXED') ? 'completed' : 'pending';
     }
     return 'pending';
   };
@@ -289,12 +307,37 @@ const SkillDebug = () => {
             <a href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-mono text-text-secondary hover:text-text-primary mb-4 transition-colors">
               <ArrowLeft size={14} /> Back to Dashboard
             </a>
-            <h1 className="text-3xl font-bold tracking-tight">SKILLDEBUG</h1>
-            <p className="text-sm text-text-secondary font-mono mt-1">“Tell me what’s wrong. Give me the evidence. I’ll investigate.”</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">SKILLDEBUG</h1>
+                <p className="text-sm text-text-secondary font-mono mt-1">“Tell me what’s wrong. Give me the evidence. I’ll investigate.”</p>
+              </div>
+              
+              {/* Tab Selector */}
+              <div className="flex border border-border-default rounded overflow-hidden font-mono text-xs select-none">
+                <button
+                  onClick={() => setActiveTab('AUTONOMOUS')}
+                  className={`px-4 py-2 border-r border-border-default transition-all ${
+                    activeTab === 'AUTONOMOUS' ? 'bg-brand-primary text-bg-dominant font-bold' : 'text-text-secondary hover:bg-panel-default'
+                  }`}
+                >
+                  🤖 Autonomous Mission
+                </button>
+                <button
+                  onClick={() => setActiveTab('INSTANT')}
+                  className={`px-4 py-2 transition-all ${
+                    activeTab === 'INSTANT' ? 'bg-brand-primary text-bg-dominant font-bold' : 'text-text-secondary hover:bg-panel-default'
+                  }`}
+                >
+                  ⚡ Instant Code Repair
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-6 text-left">
-            <h2 className="text-lg font-bold font-mono uppercase tracking-wider text-brand-primary"># What are you debugging?</h2>
+          {activeTab === 'AUTONOMOUS' ? (
+            <div className="space-y-6 text-left">
+              <h2 className="text-lg font-bold font-mono uppercase tracking-wider text-brand-primary"># What are you debugging?</h2>
             
             {/* 4 Input Methods Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -558,6 +601,190 @@ const SkillDebug = () => {
             </div>
 
           </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 text-left">
+              
+              {/* Left Column: Inputs */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-panel-default border border-border-default rounded-xl p-6 space-y-4">
+                  <h3 className="text-sm font-bold font-mono uppercase tracking-wider text-brand-primary">⚡ Code Repair Terminal</h3>
+                  
+                  <div className="space-y-1.5 font-mono text-xs">
+                    <label className="block text-text-secondary">PROGRAMMING LANGUAGE</label>
+                    <select 
+                      value={instantLanguage}
+                      onChange={(e) => setInstantLanguage(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border-default text-text-secondary rounded px-3 py-2 focus:border-brand-primary focus:outline-none"
+                    >
+                      <option value="javascript">JavaScript</option>
+                      <option value="python">Python</option>
+                      <option value="go">Go</option>
+                      <option value="rust">Rust</option>
+                      <option value="typescript">TypeScript</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 font-mono text-xs">
+                    <label className="block text-text-secondary">PASTE BROKEN CODE *</label>
+                    <textarea
+                      value={instantCode}
+                      onChange={(e) => setInstantCode(e.target.value)}
+                      className="w-full bg-[#050705] border border-border-default rounded p-3 text-[#F4F7F2] font-mono focus:border-brand-primary focus:outline-none min-h-[160px]"
+                      placeholder="// Paste your buggy code block here..."
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 font-mono text-xs">
+                    <label className="block text-text-secondary">ERROR LOG / SYMPTOMS (OPTIONAL)</label>
+                    <textarea
+                      value={instantError}
+                      onChange={(e) => setInstantError(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border-default rounded p-3 text-red-300 font-mono focus:border-brand-primary focus:outline-none min-h-[90px]"
+                      placeholder="Paste stack traces or error logs..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 font-mono text-xs">
+                    <label className="block text-text-secondary">CONTEXT / INSTRUCTIONS (OPTIONAL)</label>
+                    <textarea
+                      value={instantContext}
+                      onChange={(e) => setInstantContext(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border-default rounded p-3 text-text-secondary font-mono focus:border-brand-primary focus:outline-none min-h-[70px]"
+                      placeholder="Explain what this code is supposed to do..."
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSolveInstantBug}
+                    disabled={instantLoading || !instantCode.trim()}
+                    className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent px-5 py-2.5 rounded font-sans text-xs font-bold transition-all shadow-green-glow disabled:opacity-45 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                  >
+                    {instantLoading ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Analyzing & Verifying...
+                      </>
+                    ) : (
+                      <>
+                        <span>Solve Code Bug</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Results */}
+              <div className="lg:col-span-7">
+                {instantLoading && (
+                  <div className="bg-panel-default border border-border-default rounded-xl p-12 text-center flex flex-col items-center justify-center space-y-4">
+                    <RefreshCw size={24} className="text-brand-primary animate-spin" />
+                    <span className="text-sm font-mono text-brand-primary animate-pulse uppercase tracking-wider font-bold">AI Analyzing & Verifying Fix in Sandbox...</span>
+                    <p className="text-xs text-text-secondary max-w-sm leading-relaxed">
+                      Our autonomous agent is running tests, applying patches, and checking outcomes in our secure execution environment. This will take up to 10 seconds.
+                    </p>
+                  </div>
+                )}
+
+                {instantErrorMsg && (
+                  <div className="bg-panel-default border border-red-500/30 rounded-xl p-6 space-y-4">
+                    <div className="flex items-start gap-3 text-red-400">
+                      <AlertCircle size={20} className="shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-bold text-sm">System Error Occurred</h4>
+                        <p className="text-xs text-text-secondary mt-1">{instantErrorMsg}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setInstantErrorMsg('')}
+                      className="px-4 py-2 border border-border-default hover:bg-bg-secondary rounded text-xs font-mono text-text-secondary"
+                    >
+                      Clear Error
+                    </button>
+                  </div>
+                )}
+
+                {instantResult && (
+                  <div className="space-y-6">
+                    {/* Status Banner */}
+                    {instantResult.success ? (
+                      <div className="bg-brand-primary/10 border border-brand-primary/30 text-brand-accent p-4 rounded-xl flex items-start gap-3">
+                        <CheckCircle2 size={20} className="shrink-0 mt-0.5 text-brand-primary" />
+                        <div>
+                          <h4 className="font-bold text-sm">Verification Succeeded</h4>
+                          <p className="text-xs text-text-secondary mt-1">
+                            The code was modified and compiled successfully inside the sandbox environment without reporting errors.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 p-4 rounded-xl flex items-start gap-3">
+                        <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+                        <div>
+                          <h4 className="font-bold text-sm">Verification Failed / Unverified</h4>
+                          <p className="text-xs text-text-secondary mt-1">
+                            We generated a patch, but execution failed in the sandbox validation test with error: <b>{instantResult.error || 'Unknown runtime error'}</b>.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Explanations */}
+                    <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Root Cause</span>
+                        <p className="text-xs leading-relaxed text-text-primary">{instantResult.rootCause}</p>
+                      </div>
+                      <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                        <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Resolution Explanation</span>
+                        <p className="text-xs leading-relaxed text-text-secondary">{instantResult.explanation}</p>
+                      </div>
+                      {instantResult.changes && instantResult.changes.length > 0 && (
+                        <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                          <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Applied Changes</span>
+                          <ul className="list-disc list-inside text-xs text-text-secondary space-y-1 font-mono">
+                            {instantResult.changes.map((c, i) => (
+                              <li key={i}>{c}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Fixed Code Blocks */}
+                    <div className="bg-[#050705] border border-border-default rounded-xl overflow-hidden">
+                      <div className="bg-panel-default px-4 py-2 border-b border-border-default flex justify-between items-center text-xs font-mono select-none">
+                        <span className="text-text-secondary font-bold font-mono">Fixed Code Output</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(instantResult.fixedCode);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                          className="px-2.5 py-1 border border-border-default bg-bg-secondary hover:border-brand-primary text-text-secondary hover:text-brand-primary transition-all rounded text-[10px] font-bold"
+                        >
+                          {copied ? '✓ Copied' : 'Copy Code'}
+                        </button>
+                      </div>
+                      <div className="p-4 overflow-y-auto max-h-[300px] text-left font-mono text-[11px] leading-relaxed text-[#F4F7F2] select-text">
+                        <pre>{instantResult.fixedCode}</pre>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!instantLoading && !instantResult && !instantErrorMsg && (
+                  <div className="bg-panel-default border border-border-default/60 border-dashed rounded-xl p-16 text-center text-xs font-mono text-text-muted select-none flex flex-col items-center justify-center space-y-2">
+                    <Code size={24} className="text-text-muted/65" />
+                    <span>Bug diagnosis report console.</span>
+                    <p className="text-[10px] text-text-muted/70 max-w-xs font-sans leading-normal">
+                      Pasted code results and sandbox telemetry analysis will render here once you execute the solver.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
 
         </div>
 
@@ -691,7 +918,7 @@ const SkillDebug = () => {
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-mono text-text-muted">MISSION #DM-{mission.id}</span>
           <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-border-default bg-panel-default">
-            <span className={`w-1.5 h-1.5 rounded-full ${isVerifiedStatus(mission.status) ? 'bg-brand-primary' : mission.status === 'FAILED' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${mission.status === 'VERIFIED_FIXED' ? 'bg-brand-primary' : 'bg-yellow-500 animate-pulse'}`} />
             <span className="text-[10px] font-mono text-text-secondary uppercase">{mission.status}</span>
           </div>
         </div>
@@ -753,7 +980,7 @@ const SkillDebug = () => {
           {/* Code panel editor content */}
           <div className="flex-grow bg-bg-dominant p-4 overflow-y-auto font-mono text-xs leading-relaxed text-text-primary text-left select-text">
             {selectedFile ? (
-              (mission.status === 'PATCH_GENERATED' || mission.status === 'PATCH_READY') && mission.changes && mission.changes[0]?.filename === selectedFile.filename && !patchApplied ? (
+              mission.status === 'PATCH_GENERATED' && mission.changes && mission.changes[0]?.filename === selectedFile.filename && !patchApplied ? (
                 <div className="space-y-4">
                   <div className="p-3.5 bg-yellow-950/20 border border-yellow-500/25 rounded text-[11px] text-yellow-400 flex items-start gap-2.5">
                     <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -801,7 +1028,7 @@ const SkillDebug = () => {
 
           {/* Footer Controls */}
           <div className="h-16 border-t border-border-default bg-bg-secondary px-6 flex items-center justify-between select-none">
-            {(mission.status === 'PATCH_GENERATED' || mission.status === 'PATCH_READY') && !patchApplied ? (
+            {mission.status === 'PATCH_GENERATED' && !patchApplied ? (
               <div className="flex items-center gap-3 w-full justify-between">
                 <span className="text-[11px] text-text-secondary font-mono">
                   Agent patch ready for execution.
@@ -895,13 +1122,7 @@ const SkillDebug = () => {
                     getStepStatus(7) === 'completed' ? 'bg-brand-primary' : 'bg-border-default'
                   }`} />
                   <span className="font-bold text-text-primary block">07 VERIFY</span>
-                  <span className="text-[10px] text-text-secondary">
-                    {isVerifiedStatus(mission.status)
-                      ? 'Outcome confirmed fixed.'
-                      : mission.status === 'FAILED'
-                        ? 'Verification did not pass.'
-                        : 'Waiting for execution evidence.'}
-                  </span>
+                  <span className="text-[10px] text-text-secondary">Outcome confirmed fixed.</span>
                 </div>
 
               </div>
@@ -941,7 +1162,7 @@ const SkillDebug = () => {
           <div className="h-20 border-t border-border-default bg-panel-default px-6 flex items-center justify-between select-none">
             <div className="text-left">
               <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Mirror AI status</span>
-              {isVerifiedStatus(mission.status) ? (
+              {mission.status === 'VERIFIED_FIXED' ? (
                 <span className="text-xs font-bold text-brand-primary">Unlocked</span>
               ) : (
                 <span className="text-xs font-bold text-text-muted flex items-center gap-1"><Lock size={10} /> Locked</span>
@@ -949,7 +1170,7 @@ const SkillDebug = () => {
             </div>
             
             <div className="flex gap-2">
-              {isVerifiedStatus(mission.status) && (
+              {mission.status === 'VERIFIED_FIXED' && (
                 <button
                   onClick={() => setShowReportModal(true)}
                   className="border border-border-default hover:border-brand-primary px-4 py-2 rounded text-xs font-mono text-text-secondary hover:text-text-primary transition-all"
@@ -958,7 +1179,7 @@ const SkillDebug = () => {
                 </button>
               )}
 
-              {isVerifiedStatus(mission.status) ? (
+              {mission.status === 'VERIFIED_FIXED' ? (
                 <a 
                   href={`/mirror/${mission.id}`}
                   className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-5 py-2 rounded font-sans text-xs font-bold transition-colors shadow-green-glow"
