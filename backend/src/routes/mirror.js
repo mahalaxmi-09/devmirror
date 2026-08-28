@@ -67,6 +67,8 @@ function normalizeCoachingScores(scores = {}) {
   }
   return scores;
 }
+
+function isFinishCommand(text) {
   return /^(finish|end session|end)$/i.test(String(text || '').trim());
 }
 
