@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Sparkles, AlertCircle, Compass, History, Settings, LogOut, CheckCircle, Clock, Database, Plus, Mail, Upload, X, BarChart2, Mic, FolderOpen, Target } from 'lucide-react';
 import api from '../utils/api';
-import { timeOfDayGreeting } from '../utils/greeting';
+import { getTimeBasedGreeting, msUntilNextGreetingBoundary } from '../utils/greeting';
 
 const Dashboard = ({ user, handleLogout }) => {
   const [missions, setMissions] = useState([]);
@@ -15,6 +15,35 @@ const Dashboard = ({ user, handleLogout }) => {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [problemDescription, setProblemDescription] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  const greetingName = (user?.full_name || '').trim().split(/\s+/).filter(Boolean)[0] || '';
+  const [welcomeLine, setWelcomeLine] = useState(() => getTimeBasedGreeting(new Date(), greetingName));
+
+  useEffect(() => {
+    const refreshGreeting = () => {
+      setWelcomeLine(getTimeBasedGreeting(new Date(), greetingName));
+    };
+    refreshGreeting();
+    let boundaryTimer;
+    const armBoundary = () => {
+      clearTimeout(boundaryTimer);
+      boundaryTimer = setTimeout(() => {
+        refreshGreeting();
+        armBoundary();
+      }, msUntilNextGreetingBoundary(new Date()));
+    };
+    armBoundary();
+    const interval = setInterval(refreshGreeting, 30 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshGreeting();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearTimeout(boundaryTimer);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [greetingName]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -240,7 +269,7 @@ const Dashboard = ({ user, handleLogout }) => {
         {/* Welcome Banner */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border-default pb-6 text-left">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{timeOfDayGreeting()}, {user.full_name?.split(' ')[0] || 'Developer'}.</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{welcomeLine}.</h1>
             <p className="text-xs text-text-secondary font-mono mt-1">Your AI debugging workspace is ready.</p>
           </div>
           <div className="flex gap-3">
