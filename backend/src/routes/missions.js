@@ -6,7 +6,7 @@ import AdmZip from 'adm-zip';
 import { query } from '../db/connection.js';
 import authMiddleware from '../middleware/auth.js';
 import { analyzeBug } from '../services/gemini.js';
-import { runInSandbox } from '../services/sandbox.js';
+import { runInSandbox, detectRunCommand } from '../services/sandbox.js';
 import { runDebugAgent } from '../services/agent.js';
 
 const router = express.Router();
@@ -60,9 +60,11 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
       for (const entry of zipEntries) {
         if (entry.isDirectory) continue;
         
-        const entryName = entry.entryName;
-        // Exclude dangerous files, node_modules, .git, etc.
+        const entryName = entry.entryName.replace(/\\/g, '/');
+        // Reject path traversal and dangerous paths
         if (
+          entryName.includes('..') ||
+          entryName.startsWith('/') ||
           entryName.includes('node_modules') || 
           entryName.includes('.git') || 
           entryName.includes('.env') ||
@@ -143,7 +145,10 @@ router.post('/:id/upload-evidence', authMiddleware, upload.single('file'), async
 // 1. Create a debug mission
 router.post('/', authMiddleware, async (req, res) => {
   const { voice_transcript, problem_description, input_mode = 'text', isDemo, language = 'javascript' } = req.body;
-  const description = problem_description || voice_transcript || 'My login request is failing.';
+  const description = problem_description || voice_transcript;
+  if (!description || !String(description).trim()) {
+    return res.status(400).json({ error: 'A problem description is required.' });
+  }
 
   try {
     // Insert mission
@@ -343,13 +348,14 @@ router.post('/:id/debug', authMiddleware, async (req, res) => {
     });
 
     await logAgentEvent(id, 'CODE AGENT', `Applying generated patch to isolated sandbox directory...`, 'patch', 'success');
-    await logAgentEvent(id, 'TEST AGENT', `Running test command: npm test`, 'test', 'success');
+    const runCommand = detectRunCommand(patchedFiles);
+    await logAgentEvent(id, 'TEST AGENT', `Running verification command: ${runCommand}`, 'test', 'success');
 
     // Execute Sandbox verification
     const attemptCountRes = await query('SELECT COUNT(*) as count FROM test_runs WHERE mission_id = $1', [id]);
     const nextAttempt = parseInt(attemptCountRes.rows[0].count) + 1;
 
-    const sandboxResult = await runInSandbox(id, patchedFiles, 'npm test');
+    const sandboxResult = await runInSandbox(id, patchedFiles, runCommand);
     
     // Save run outcome
     await query(

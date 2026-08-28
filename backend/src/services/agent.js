@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { query } from '../db/connection.js';
-import { runInSandbox } from './sandbox.js';
+import { runInSandbox, detectRunCommand } from './sandbox.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
@@ -226,7 +226,7 @@ Decide your next action. Return ONLY the JSON object.
         await logAgentEvent(missionId, 'DEBUG AGENT', 'Tool read_log executed. Logs loaded from sandbox history.', 'trace', 'success');
 
       } else if (action.tool === 'run_command') {
-        const cmd = action.arguments?.query || 'npm test';
+        const cmd = action.arguments?.query || detectRunCommand(currentFilesState);
         await logAgentEvent(missionId, 'DEBUG AGENT', `Executing command safely in sandbox: ${cmd}...`, 'trace', 'success');
         const cmdRes = await runInSandbox(missionId, currentFilesState, cmd);
         
@@ -263,24 +263,32 @@ Decide your next action. Return ONLY the JSON object.
         await logAgentEvent(missionId, 'BUILD AGENT', `Build step completed. Success: ${buildRes.success}`, 'build', buildRes.success ? 'success' : 'danger');
 
       } else if (action.tool === 'verify_result') {
-        // Runs verifier assertions based on user specifications
-        const criterion = action.arguments?.query || 'Total is 300';
+        const criterion = action.arguments?.query || mission.voice_transcript || '';
         await logAgentEvent(missionId, 'VERIFICATION AGENT', `Asserting criteria: "${criterion}"...`, 'verify', 'success');
         
         const lastRunIndex = conversationHistory.map(h => h.action.tool).lastIndexOf('run_tests');
-        const lastRun = lastRunIndex !== -1 ? conversationHistory[lastRunIndex] : null;
+        let lastRun = lastRunIndex !== -1 ? conversationHistory[lastRunIndex] : null;
         let pass = false;
+        let outputText = '';
 
-        if (lastRun && lastRun.result.stdout) {
-          // Check if output matches user criterion
-          if (criterion.includes('300')) {
-            pass = lastRun.result.stdout.includes('Total: 300') || lastRun.result.stdout.includes('300');
+        if (!lastRun) {
+          const lastCmdIndex = conversationHistory.map(h => h.action.tool).lastIndexOf('run_command');
+          lastRun = lastCmdIndex !== -1 ? conversationHistory[lastCmdIndex] : null;
+        }
+
+        if (lastRun && (lastRun.result.stdout || lastRun.result.stderr)) {
+          outputText = `${lastRun.result.stdout || ''}\n${lastRun.result.stderr || ''}`;
+          if (criterion.trim()) {
+            const numbers = criterion.match(/\d+/g) || [];
+            pass = numbers.length > 0
+              ? numbers.some((num) => outputText.includes(num))
+              : lastRun.result.exitCode === 0;
           } else {
             pass = lastRun.result.exitCode === 0;
           }
         } else {
-          // If no test run, run a quick check
-          const quickRes = await runInSandbox(missionId, currentFilesState, 'npm test');
+          const quickRes = await runInSandbox(missionId, currentFilesState, detectRunCommand(currentFilesState));
+          outputText = `${quickRes.stdout || ''}\n${quickRes.stderr || ''}`;
           pass = quickRes.success;
         }
 
@@ -289,14 +297,16 @@ Decide your next action. Return ONLY the JSON object.
           action,
           result: {
             criterion,
+            output: outputText.trim(),
             status: pass ? 'PASS' : 'FAIL'
           }
         });
         await logAgentEvent(missionId, 'VERIFICATION AGENT', `Verification Assertion result: ${pass ? 'PASS' : 'FAIL'}`, 'verify', pass ? 'success' : 'danger');
 
       } else if (action.tool === 'run_tests') {
-        await logAgentEvent(missionId, 'TEST AGENT', 'Reproducing test baseline in isolated sandbox environment...', 'test', 'success');
-        const testRes = await runInSandbox(missionId, currentFilesState, 'npm test');
+        const runCommand = detectRunCommand(currentFilesState);
+        await logAgentEvent(missionId, 'TEST AGENT', `Reproducing baseline in isolated sandbox: ${runCommand}`, 'test', 'success');
+        const testRes = await runInSandbox(missionId, currentFilesState, runCommand);
         
         conversationHistory.push({
           turn,
@@ -340,7 +350,8 @@ Decide your next action. Return ONLY the JSON object.
         await logAgentEvent(missionId, 'CODE AGENT', `Applying code patch attempt #${attemptsCount} to ${fname}...`, 'patch', 'success');
 
         // Verify inside sandbox immediately
-        const testRes = await runInSandbox(missionId, currentFilesState, 'npm test');
+        const verifyCommand = detectRunCommand(currentFilesState);
+        const testRes = await runInSandbox(missionId, currentFilesState, verifyCommand);
 
         conversationHistory.push({
           turn,

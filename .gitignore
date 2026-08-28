@@ -24,6 +24,10 @@ devmirror.db-journal
 # Sandbox dynamic workspaces
 backend/sandbox/
 
+# Logs and credentials
+logs/
+credentials/
+
 # System files
 .DS_Store
 Thumbs.db

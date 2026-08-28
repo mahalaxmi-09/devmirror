@@ -36,12 +36,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
-// AI health check
-app.get('/api/ai/health', async (req, res) => {
+function isConfiguredKey(key, placeholder = 'your_') {
+  return key && key !== '' && !key.includes(placeholder);
+}
+
+async function testGeminiConnection() {
   const key = process.env.GEMINI_API_KEY;
-  const isConfigured = key && key !== 'your_gemini_api_key_here' && key !== '';
-  if (!isConfigured) {
-    return res.json({ gemini: 'unavailable' });
+  if (!isConfiguredKey(key, 'your_gemini_api_key_here')) {
+    return { provider: 'gemini', status: 'unavailable', reason: 'GEMINI_API_KEY not configured' };
   }
 
   try {
@@ -49,16 +51,71 @@ app.get('/api/ai/health', async (req, res) => {
     const genAI = new GoogleGenerativeAI(key);
     const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
     const model = genAI.getGenerativeModel({ model: modelName });
-    // Execute a minimal check request
     await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: 'healthcheck' }] }],
       generationConfig: { maxOutputTokens: 1 }
     });
-    res.json({ gemini: 'connected' });
+    return { provider: 'gemini', status: 'connected', model: modelName };
   } catch (err) {
-    console.error('Gemini Healthcheck Error:', err);
-    res.json({ gemini: 'unavailable' });
+    console.error('Gemini Healthcheck Error:', err.message);
+    return { provider: 'gemini', status: 'unavailable', reason: err.message };
   }
+}
+
+async function testOpenAIConnection() {
+  const key = process.env.OPENAI_API_KEY;
+  if (!isConfiguredKey(key, 'your_openai_api_key_here')) {
+    return { provider: 'openai', status: 'unavailable', reason: 'OPENAI_API_KEY not configured' };
+  }
+
+  try {
+    const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: [{ role: 'user', content: 'healthcheck' }],
+        max_tokens: 1
+      })
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`OpenAI API error ${response.status}: ${body.slice(0, 200)}`);
+    }
+
+    return { provider: 'openai', status: 'connected', model: modelName };
+  } catch (err) {
+    console.error('OpenAI Healthcheck Error:', err.message);
+    return { provider: 'openai', status: 'unavailable', reason: err.message };
+  }
+}
+
+// AI health check — performs a real provider request
+app.get('/api/ai/health', async (req, res) => {
+  const provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
+
+  if (provider === 'openai') {
+    const result = await testOpenAIConnection();
+    return res.json({
+      ai_provider: 'openai',
+      openai: result.status,
+      model: result.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      reason: result.reason || undefined
+    });
+  }
+
+  const result = await testGeminiConnection();
+  return res.json({
+    ai_provider: 'gemini',
+    gemini: result.status,
+    model: result.model || process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    reason: result.reason || undefined
+  });
 });
 
 // Error handling middleware

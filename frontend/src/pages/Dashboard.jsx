@@ -2,11 +2,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Sparkles, AlertCircle, Compass, History, Settings, LogOut, CheckCircle, Clock, Database, Plus, Mail, Upload, X, BarChart2, Mic, FolderOpen, Target } from 'lucide-react';
 import api from '../utils/api';
 
+const getTimeBasedGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Good Morning';
+  if (hour >= 12 && hour < 17) return 'Good Afternoon';
+  if (hour >= 17 && hour < 21) return 'Good Evening';
+  return 'Good Night';
+};
+
 const Dashboard = ({ user, handleLogout }) => {
   const [missions, setMissions] = useState([]);
   const [challenges, setChallenges] = useState([]);
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [greeting, setGreeting] = useState(getTimeBasedGreeting());
 
   // File Upload State
   const fileInputRef = useRef(null);
@@ -14,6 +23,14 @@ const Dashboard = ({ user, handleLogout }) => {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [problemDescription, setProblemDescription] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    setGreeting(getTimeBasedGreeting());
+    const greetingTimer = setInterval(() => {
+      setGreeting(getTimeBasedGreeting());
+    }, 60000);
+    return () => clearInterval(greetingTimer);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -239,7 +256,7 @@ const Dashboard = ({ user, handleLogout }) => {
         {/* Welcome Banner */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border-default pb-6 text-left">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Good morning, {user.full_name?.split(' ')[0] || 'Developer'}.</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{greeting}, {user.full_name?.split(' ')[0] || user.full_name || 'Developer'}.</h1>
             <p className="text-xs text-text-secondary font-mono mt-1">Your AI debugging workspace is ready.</p>
           </div>
           <div className="flex gap-3">
@@ -377,7 +394,7 @@ const Dashboard = ({ user, handleLogout }) => {
                           >
                             <td className="py-3 pl-2 font-bold text-brand-primary">#DM-{mission.id}</td>
                             <td className="py-3 max-w-[150px] truncate pr-4 text-text-secondary">{mission.voice_transcript || 'Direct text code upload'}</td>
-                            <td className="py-3 text-text-muted truncate max-w-[100px]">demo_auth_project</td>
+                            <td className="py-3 text-text-muted truncate max-w-[100px]">{mission.file_count > 0 ? `${mission.file_count} file(s)` : '—'}</td>
                             <td className="py-3 text-center">{mission.attempts_count}</td>
                             <td className="py-3">
                               <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold ${

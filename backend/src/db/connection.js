@@ -368,6 +368,7 @@ export const query = (text, params = []) => {
       // If it is an INSERT statement, we might want to return { rows: [{ id: this.lastID }] } for Postgres compatibility
       const isInsert = text.trim().toUpperCase().startsWith('INSERT');
       const isSelect = text.trim().toUpperCase().startsWith('SELECT');
+      const hasReturning = /RETURNING/i.test(sqliteSql);
 
       if (isSelect) {
         dbInstance.all(sqliteSql, params, (err, rows) => {
@@ -378,13 +379,24 @@ export const query = (text, params = []) => {
             resolve({ rows });
           }
         });
+      } else if (isInsert && hasReturning) {
+        dbInstance.get(sqliteSql, params, function (err, row) {
+          if (err) {
+            console.error('SQLITE INSERT RETURNING ERROR:', err, sqliteSql, params);
+            reject(err);
+          } else {
+            resolve({
+              rows: row ? [row] : [],
+              rowCount: row ? 1 : 0
+            });
+          }
+        });
       } else {
         dbInstance.run(sqliteSql, params, function (err) {
           if (err) {
             console.error('SQLITE EXEC ERROR:', err, sqliteSql, params);
             reject(err);
           } else {
-            // Return compatibility format
             resolve({
               rows: isInsert ? [{ id: this.lastID }] : [],
               rowCount: this.changes

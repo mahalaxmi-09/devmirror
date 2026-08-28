@@ -3,71 +3,131 @@ import path from 'path';
 import { exec } from 'child_process';
 
 const SANDBOX_ROOT = path.join(process.cwd(), 'sandbox');
+const MAX_OUTPUT_CHARS = 50000;
+const EXEC_TIMEOUT_MS = 6000;
 
-// Ensure Sandbox root exists
 if (!fs.existsSync(SANDBOX_ROOT)) {
   fs.mkdirSync(SANDBOX_ROOT, { recursive: true });
 }
 
 /**
- * Prepares the sandbox directory with files and runs a test/build command.
- * @param {string|number} missionId 
- * @param {Array<{filename: string, file_content: string}>} files 
- * @param {string} command 
- * @returns {Promise<{stdout: string, stderr: string, exitCode: number, success: boolean}>}
+ * Reject path traversal and absolute paths outside the sandbox root.
+ */
+export function resolveSafePath(baseDir, filename) {
+  if (!filename || typeof filename !== 'string') {
+    throw new Error('Invalid filename.');
+  }
+
+  const normalized = filename.replace(/\\/g, '/');
+  if (
+    path.isAbsolute(normalized) ||
+    normalized.includes('..') ||
+    normalized.startsWith('/')
+  ) {
+    throw new Error(`Path traversal rejected: ${filename}`);
+  }
+
+  const resolved = path.resolve(baseDir, normalized);
+  const resolvedBase = path.resolve(baseDir);
+  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+    throw new Error(`Path traversal rejected: ${filename}`);
+  }
+
+  return resolved;
+}
+
+/**
+ * Detect the best command to execute project files in the sandbox.
+ */
+export function detectRunCommand(files, preferredCommand) {
+  if (preferredCommand) return preferredCommand;
+
+  const names = files.map((f) => f.filename);
+  const hasPackageJson = names.includes('package.json');
+
+  if (hasPackageJson) {
+    try {
+      const pkgFile = files.find((f) => f.filename === 'package.json');
+      const pkg = JSON.parse(pkgFile.file_content || '{}');
+      if (pkg.scripts?.test) return 'npm test';
+      if (pkg.scripts?.start) return 'npm start';
+    } catch {
+      return 'npm test';
+    }
+    return 'npm test';
+  }
+
+  if (names.includes('index.js')) return 'node index.js';
+  if (names.includes('main.py')) return 'python main.py';
+  if (names.includes('test.js')) return 'node test.js';
+
+  const firstJs = names.find((n) => n.endsWith('.js'));
+  if (firstJs) return `node ${firstJs}`;
+
+  const firstPy = names.find((n) => n.endsWith('.py'));
+  if (firstPy) return `python ${firstPy}`;
+
+  return 'node index.js';
+}
+
+function truncateOutput(text) {
+  if (!text) return '';
+  if (text.length <= MAX_OUTPUT_CHARS) return text;
+  return text.slice(0, MAX_OUTPUT_CHARS) + '\n...[output truncated]';
+}
+
+/**
+ * Prepares the sandbox directory with files and runs a command.
  */
 export const runInSandbox = async (missionId, files, command) => {
   const missionDir = path.join(SANDBOX_ROOT, String(missionId));
 
   try {
-    // 1. Recreate clean sandbox dir for this run
     if (fs.existsSync(missionDir)) {
       fs.rmSync(missionDir, { recursive: true, force: true });
     }
     fs.mkdirSync(missionDir, { recursive: true });
 
-    // 2. Write files
     for (const file of files) {
-      const filePath = path.join(missionDir, file.filename);
+      const filePath = resolveSafePath(missionDir, file.filename);
       const dirPath = path.dirname(filePath);
-      
       if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
       }
-      
       fs.writeFileSync(filePath, file.file_content, 'utf8');
     }
 
-    // 3. Write a mock node_modules or standard package setup if it doesn't exist
-    // If it's javascript and lacks package.json, we can run raw node.
-    // If there is package.json, we can install dependencies (or mock them to speed up).
-    // Let's check if the project has a package.json.
-    const hasPackageJson = files.some(f => f.filename === 'package.json');
-    
-    // To speed up executions and make them self-contained without npm install during the demo,
-    // we can bundle simple assertions or provide pre-installed node_modules in sandbox or write a mock script.
-    // Let's support executing the command.
-    
+    const runCommand = detectRunCommand(files, command);
+
     return new Promise((resolve) => {
-      // Set a 6-second timeout to prevent execution lockups
-      const child = exec(command, { cwd: missionDir, timeout: 6000 }, (error, stdout, stderr) => {
+      exec(runCommand, { cwd: missionDir, timeout: EXEC_TIMEOUT_MS }, (error, stdout, stderr) => {
         const exitCode = error ? (error.code || 1) : 0;
-        
         resolve({
-          stdout: stdout || '',
-          stderr: stderr || (error ? error.message : ''),
+          stdout: truncateOutput(stdout || ''),
+          stderr: truncateOutput(stderr || (error ? error.message : '')),
           exitCode,
-          success: exitCode === 0
+          success: exitCode === 0,
+          command: runCommand
         });
       });
     });
-
   } catch (error) {
     return {
       stdout: '',
       stderr: `Sandbox Setup Failure: ${error.message}`,
       exitCode: -1,
-      success: false
+      success: false,
+      command: command || null
     };
   }
 };
+
+/**
+ * Remove a mission sandbox directory after completion.
+ */
+export function cleanupSandbox(missionId) {
+  const missionDir = path.join(SANDBOX_ROOT, String(missionId));
+  if (fs.existsSync(missionDir)) {
+    fs.rmSync(missionDir, { recursive: true, force: true });
+  }
+}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Sparkles, Shield, Camera, Mic, Type, Play, X, BarChart2, FolderOpen, 
-  Target, Clock, Settings, LogOut, Loader2, Award, Zap, AlertCircle, ArrowRight, VideoOff 
+  Target, Clock, Settings, LogOut, Loader2, Award, Zap, AlertCircle, ArrowRight, VideoOff, Upload
 } from 'lucide-react';
 import api from '../utils/api';
 import Waveform from '../components/Waveform';

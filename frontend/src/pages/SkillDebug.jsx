@@ -155,8 +155,8 @@ const SkillDebug = () => {
       // 1. Create base mission with exact data models
       const missionRes = await api.post('/missions', {
         voice_transcript: transcript,
-        problem_description: pastedDescription,
-        input_mode: inputMode,
+        problem_description: pastedDescription || typedProblemText,
+        input_mode: inputMode || (typedProblemText.trim() ? 'text' : ''),
         language: editorLanguage === 'Auto Detect' ? 'javascript' : editorLanguage.toLowerCase()
       });
       const missionData = missionRes.data;
@@ -258,7 +258,7 @@ const SkillDebug = () => {
 
   // Helper validation: Do we have source code files or project archive to debug?
   const hasCodeEvidence = !!(selectedProjectZip || pastedCode.trim());
-  const hasDescription = !!pastedDescription.trim();
+  const hasDescription = !!(pastedDescription.trim() || typedProblemText.trim());
   const hasEnoughEvidence = hasCodeEvidence && hasDescription;
 
   // RENDER LANDING SETUP SCREEN
