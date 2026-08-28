@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, ShieldCheck, Database, Play, Sparkles, User, Mail, Lock } from 'lucide-react';
 import api from '../utils/api';
+import { toErrorMessage } from '../utils/errorMessage';
 
 const Auth = ({ setUser }) => {
   const [isSignIn, setIsSignIn] = useState(true);
@@ -72,7 +73,7 @@ const Auth = ({ setUser }) => {
         window.location.href = '/dashboard';
       }, 1000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Authentication failed. Please verify credentials.');
+      setError(toErrorMessage(err.response?.data?.error || err.response?.data, 'Authentication failed. Please verify credentials.'));
     } finally {
       setLoading(false);
     }

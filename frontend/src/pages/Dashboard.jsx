@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Sparkles, AlertCircle, Compass, History, Settings, LogOut, CheckCircle, Clock, Database, Plus, Mail, Upload, X, BarChart2, Mic, FolderOpen, Target } from 'lucide-react';
 import api from '../utils/api';
 import { getTimeBasedGreeting, msUntilNextGreetingBoundary } from '../utils/greeting';
+import { toErrorMessage } from '../utils/errorMessage';
 
 const Dashboard = ({ user, handleLogout }) => {
   const [missions, setMissions] = useState([]);
   const [challenges, setChallenges] = useState([]);
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // File Upload State
   const fileInputRef = useRef(null);
@@ -53,11 +55,16 @@ const Dashboard = ({ user, handleLogout }) => {
           api.get('/challenges'),
           api.get('/skills')
         ]);
-        setMissions(missionsRes.data);
-        setChallenges(challengesRes.data);
-        setSkills(skillsRes.data);
+        setMissions(Array.isArray(missionsRes.data) ? missionsRes.data : []);
+        setChallenges(Array.isArray(challengesRes.data) ? challengesRes.data : []);
+        setSkills(Array.isArray(skillsRes.data) ? skillsRes.data : []);
       } catch (err) {
-        console.error('Failed to load dashboard data:', err);
+        const message = toErrorMessage(err.response?.data?.error || err.response?.data, 'Failed to load dashboard data.');
+        console.error('Failed to load dashboard data:', message);
+        setLoadError(message);
+        setMissions([]);
+        setChallenges([]);
+        setSkills([]);
       } finally {
         setLoading(false);
       }
@@ -281,6 +288,12 @@ const Dashboard = ({ user, handleLogout }) => {
             </button>
           </div>
         </div>
+
+        {loadError && (
+          <div role="alert" className="border border-yellow-500/30 bg-yellow-950/20 text-yellow-200 text-xs font-mono px-4 py-3 rounded">
+            {loadError} — showing empty workspace. Check that the backend is running.
+          </div>
+        )}
 
         {loading ? (
           <div className="py-20 text-center text-xs font-mono text-text-muted animate-pulse">
