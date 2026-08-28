@@ -1,9 +1,4 @@
 import { generateJson } from './geminiClient.js';
-import {
-  generatePrepProfile,
-  generateAdaptiveQuestion,
-  generateMirrorReport
-} from './mirrorAgent.js';
 
 export const analyzeBug = async () => {
   const err = new Error('AI SERVICE UNAVAILABLE');
@@ -46,4 +41,3 @@ Return {"rating":"Strong"|"Good"|"Developing","feedback":"..."}`,
   );
 };
 
-export { generatePrepProfile, generateAdaptiveQuestion, generateMirrorReport };

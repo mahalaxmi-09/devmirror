@@ -8,7 +8,8 @@ import authRouter from './routes/auth.js';
 import missionsRouter from './routes/missions.js';
 import skillsRouter from './routes/skills.js';
 import mirrorRouter from './routes/mirror.js';
-import { pingSelectedProvider } from './ai/providerFactory.js';
+import { getAIProviderName, getGeminiKeyStatus } from './config/env.js';
+import { pingAllProviders } from './ai/providerFactory.js';
 import { BACKEND_ROOT } from './config/env.js';
 
 const app = express();
@@ -34,10 +35,23 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/ai/health', async (req, res) => {
   try {
-    const result = await pingSelectedProvider();
-    return res.json(result);
+    const result = await pingAllProviders();
+    const geminiStatus = getGeminiKeyStatus();
+    return res.json({
+      ...result,
+      gemini: result.providers?.find((p) => p.provider === 'gemini')?.status === 'connected' ? 'connected' : 'unavailable',
+      geminiKey: geminiStatus.validFormat ? 'valid' : (geminiStatus.configured ? 'invalid_format' : 'missing'),
+      hint: geminiStatus.hint || (result.status === 'unavailable'
+        ? 'Check AI provider quota/billing or set ANTHROPIC_API_KEY as fallback.'
+        : null)
+    });
   } catch {
-    res.json({ provider: process.env.AI_PROVIDER || 'gemini', status: 'unavailable' });
+    res.json({
+      provider: getAIProviderName(),
+      status: 'unavailable',
+      gemini: 'unavailable',
+      hint: 'AI provider check failed.'
+    });
   }
 });
 

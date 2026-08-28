@@ -27,7 +27,26 @@ export function getAIProviderName() {
 }
 
 export function getGeminiApiKey() {
-  return readKey('GEMINI_API_KEY');
+  const key = readKey('GEMINI_API_KEY');
+  if (!key) return null;
+  if (key.startsWith('AQ.') || key.startsWith('ya29.')) {
+    console.warn('GEMINI_API_KEY looks like a short-lived OAuth token. Use a Google AI Studio key (starts with AIza).');
+  }
+  return key;
+}
+
+export function getGeminiKeyStatus() {
+  const key = readKey('GEMINI_API_KEY');
+  if (!key) return { configured: false, validFormat: false, hint: 'Set GEMINI_API_KEY in backend/.env' };
+  if (key.startsWith('AIza')) return { configured: true, validFormat: true, hint: null };
+  if (key.startsWith('AQ.') || key.startsWith('ya29.')) {
+    return {
+      configured: true,
+      validFormat: false,
+      hint: 'GEMINI_API_KEY appears to be a temporary token. Create a key at https://aistudio.google.com/apikey (starts with AIza).'
+    };
+  }
+  return { configured: true, validFormat: true, hint: null };
 }
 
 export function getGeminiModel() {
@@ -36,7 +55,7 @@ export function getGeminiModel() {
 
 export function getGeminiModelCandidates() {
   const primary = getGeminiModel();
-  const extras = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-3.7-flash'];
+  const extras = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
   return [primary, ...extras.filter((m) => m !== primary)];
 }
 

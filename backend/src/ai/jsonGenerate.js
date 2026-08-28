@@ -28,14 +28,14 @@ export async function generateStructuredJson(prompt, systemInstruction) {
     }
     if (typeof provider.generateJson !== 'function') continue;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
       try {
         return await provider.generateJson(prompt, systemInstruction);
       } catch (err) {
         lastError = err;
-        console.error(`Mirror JSON via ${name} failed:`, String(err?.message || 'unknown').slice(0, 180));
-        if (attempt === 0 && isRetryable(err)) {
-          await sleep(2500 * (attempt + 1));
+        console.error(`Mirror JSON via ${name} failed (attempt ${attempt + 1}):`, String(err?.message || 'unknown').slice(0, 180));
+        if (attempt < 3 && isRetryable(err)) {
+          await sleep(2000 * (attempt + 1));
           continue;
         }
         break;
