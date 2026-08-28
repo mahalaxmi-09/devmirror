@@ -3,6 +3,24 @@ import { motion } from 'framer-motion';
 import { Play, Sparkles, Terminal, CheckCircle2, Shield, ArrowRight, Activity, Cpu } from 'lucide-react';
 
 const Landing = () => {
+  const videoRef = React.useRef(null);
+  const [isMuted, setIsMuted] = React.useState(true);
+
+  React.useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.volume = 0.5; // Default volume 50%
+      videoRef.current.muted = true; // Start muted for reliable autoplay
+      videoRef.current.play().catch(e => console.log("Autoplay failed:", e));
+    }
+  }, []);
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      const nextMuted = !videoRef.current.muted;
+      videoRef.current.muted = nextMuted;
+      setIsMuted(nextMuted);
+    }
+  };
   const steps = [
     { num: '01', title: 'SPEAK', desc: 'Explain the problem naturally in your own voice.' },
     { num: '02', title: 'PROVIDE EVIDENCE', desc: 'Upload project directories, logs, error screenshots, or connect GitHub.' },
@@ -108,10 +126,10 @@ const Landing = () => {
               {/* Video Player */}
               <div className="relative aspect-video w-full bg-black flex items-center justify-center">
                 <video
+                  ref={videoRef}
                   className="w-full h-full object-cover"
                   autoPlay
                   loop
-                  muted
                   playsInline
                   controls
                   poster="https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=800&q=80"
@@ -123,6 +141,14 @@ const Landing = () => {
                   />
                   Your browser does not support the video tag.
                 </video>
+
+                {/* Floating Unmute Button */}
+                <button
+                  onClick={toggleMute}
+                  className="absolute bottom-12 right-4 bg-black/75 hover:bg-black text-white hover:text-brand-primary border border-border-default/50 px-3.5 py-2 rounded-md flex items-center gap-1.5 text-[10px] font-bold font-mono transition-all z-10 shadow-lg select-none"
+                >
+                  {isMuted ? '🔊 CLICK TO UNMUTE' : '🔇 MUTE PREVIEW'}
+                </button>
               </div>
             </motion.div>
           </div>

@@ -1,4 +1,52 @@
+import OpenAI from 'openai';
 import { generateJson } from './geminiClient.js';
+
+let openaiClient = null;
+const getOpenAI = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || apiKey === 'your_openai_api_key_here') return null;
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
+};
+
+export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain') => {
+  const openai = getOpenAI();
+  if (openai) {
+    try {
+      console.log('Routing request to OpenAI gpt-4o...');
+      const response = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ],
+        response_format: mimeType === 'application/json' ? { type: 'json_object' } : undefined
+      });
+      return response.choices[0].message.content;
+    } catch (err) {
+      console.error('OpenAI call failed. Falling back to Gemini...', err.message);
+    }
+  }
+
+  // Fallback to Gemini
+  console.log('Routing request to Gemini...');
+  if (mimeType === 'application/json') {
+    const res = await generateJson(prompt, systemInstruction);
+    return typeof res === 'object' ? JSON.stringify(res) : res;
+  } else {
+    const { getGeminiClient, getGeminiModel } = await import('./geminiClient.js');
+    const ai = getGeminiClient();
+    if (!ai) throw new Error('AI providers unavailable.');
+    const response = await ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: { systemInstruction }
+    });
+    return response.text;
+  }
+};
 
 export const analyzeBug = async () => {
   const err = new Error('AI SERVICE UNAVAILABLE');
@@ -7,8 +55,8 @@ export const analyzeBug = async () => {
 };
 
 export const evaluateSession = async (voiceTranscript, files, testRuns, codeChanges) => {
-  return generateJson(
-    `Analyze this completed debugging session and return JSON skill scores 0-100 plus evidence fields.
+  const systemInstruction = 'You are SkillMirror. Score only from provided evidence. Never invent execution results.';
+  const prompt = `Analyze this completed debugging session and return JSON skill scores 0-100 plus evidence fields.
 Transcript: ${voiceTranscript}
 Files: ${JSON.stringify((files || []).map((f) => f.filename))}
 Test runs: ${JSON.stringify(testRuns || [])}
@@ -26,18 +74,19 @@ Return:
   "development_area": "",
   "why": "",
   "challenge": { "title": "", "description": "", "code_language": "javascript", "initial_code": "", "test_code": "", "bug_description": "" }
-}`,
-    'You are SkillMirror. Score only from provided evidence. Never invent execution results.'
-  );
+}`;
+
+  const res = await callAI(systemInstruction, prompt, 'application/json');
+  return typeof res === 'string' ? JSON.parse(res) : res;
 };
 
 export const evaluateExplanation = async (userExplanation, rootCause, patchedCode) => {
-  return generateJson(
-    `Developer explanation: ${userExplanation}
+  const systemInstruction = 'Evaluate technical understanding from the explanation only.';
+  const prompt = `Developer explanation: ${userExplanation}
 Root cause: ${rootCause}
 Patched code: ${patchedCode}
-Return {"rating":"Strong"|"Good"|"Developing","feedback":"..."}`,
-    'Evaluate technical understanding from the explanation only.'
-  );
-};
+Return {"rating":"Strong"|"Good"|"Developing","feedback":"..."}`;
 
+  const res = await callAI(systemInstruction, prompt, 'application/json');
+  return typeof res === 'string' ? JSON.parse(res) : res;
+};
