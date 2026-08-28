@@ -12,10 +12,9 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restore user auth session
     const storedUser = localStorage.getItem('user');
     const storedToken = localStorage.getItem('token');
-    
+
     if (storedUser && storedToken) {
       try {
         setUser(JSON.parse(storedUser));
@@ -26,6 +25,9 @@ function App() {
     }
     setLoading(false);
   }, []);
+
+  // If user lands on /auth with a stale session, let them stay on login
+  // (don't auto-redirect to dashboard until they log in again)
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -48,10 +50,10 @@ function App() {
         {/* Public Landing Page */}
         <Route path="/" element={<Landing />} />
 
-        {/* Auth page */}
-        <Route 
-          path="/auth" 
-          element={user ? <Navigate to="/dashboard" replace /> : <Auth setUser={setUser} />} 
+        {/* Auth page — always show login form; dashboard redirect only after fresh login */}
+        <Route
+          path="/auth"
+          element={<Auth setUser={setUser} />}
         />
 
         {/* Protected Dashboard */}

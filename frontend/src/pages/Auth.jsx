@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, ShieldCheck, Database, Play, Sparkles, User, Mail, Lock } from 'lucide-react';
-import api from '../utils/api';
+import api, { checkBackendHealth } from '../utils/api';
 import { toErrorMessage } from '../utils/errorMessage';
 
 const Auth = ({ setUser }) => {
@@ -16,6 +16,11 @@ const Auth = ({ setUser }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
+  const [backendOk, setBackendOk] = useState(null);
+
+  useEffect(() => {
+    checkBackendHealth(20000).then(setBackendOk);
+  }, []);
 
   const toggleMode = () => {
     setIsSignIn(!isSignIn);
@@ -61,7 +66,7 @@ const Auth = ({ setUser }) => {
       : { email: formData.email, password: formData.password, full_name: formData.full_name };
 
     try {
-      const response = await api.post(endpoint, payload);
+      const response = await api.post(endpoint, payload, { timeout: 30000 });
       setSuccess(response.data.message || 'Authenticated successfully.');
       
       // Save details
@@ -73,7 +78,7 @@ const Auth = ({ setUser }) => {
         window.location.href = '/dashboard';
       }, 1000);
     } catch (err) {
-      setError(toErrorMessage(err.response?.data?.error || err.response?.data, 'Authentication failed. Please verify credentials.'));
+      setError(toErrorMessage(err.response?.data?.error || err.response?.data || err.message, 'Authentication failed. Please verify credentials.'));
     } finally {
       setLoading(false);
     }
@@ -167,6 +172,11 @@ const Auth = ({ setUser }) => {
         <div className="max-w-md w-full mx-auto space-y-8">
           
           <div className="text-center lg:text-left">
+            {backendOk === false && (
+              <div role="alert" className="mb-4 p-3 rounded border border-yellow-500/30 bg-yellow-950/20 text-yellow-200 text-xs font-mono text-left">
+                Backend is waking up or unreachable. Wait 30 seconds, then try again. If this persists, redeploy the Render backend.
+              </div>
+            )}
             <h2 className="text-3xl font-bold tracking-tight text-text-primary">
               {isSignIn ? 'Sign In' : 'Create Account'}
             </h2>
