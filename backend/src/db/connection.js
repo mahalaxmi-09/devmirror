@@ -15,11 +15,18 @@ export const initDb = async () => {
     console.log('Connecting to PostgreSQL database...');
     pgPool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 15000,
+      idleTimeoutMillis: 10000,
+      max: 10
     });
-    
-    // Test connection
-    const client = await pgPool.connect();
+
+    const client = await Promise.race([
+      pgPool.connect(),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('PostgreSQL connection timed out after 15s')), 15000);
+      })
+    ]);
     client.release();
     console.log('PostgreSQL connected successfully.');
     

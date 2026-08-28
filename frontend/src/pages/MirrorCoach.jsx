@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import api from '../utils/api';
 import { timeOfDayGreeting } from '../utils/greeting';
+import { toErrorMessage } from '../utils/errorMessage';
 
 const LANGUAGES = [
   'javascript', 'typescript', 'python', 'java', 'go', 'cpp', 'c',
@@ -86,7 +87,10 @@ const MirrorCoach = ({ user, handleLogout }) => {
       const response = await api.post('/mirror/analyze', { code, language, request });
       setResult(response.data);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Mirror AI analysis failed. Check backend AI configuration.';
+      const msg = toErrorMessage(
+        err.response?.data?.error || err.response?.data || err.message,
+        'Mirror AI analysis failed. Check backend AI configuration.'
+      );
       setErrorBanner(msg);
     } finally {
       setAnalyzing(false);
@@ -114,7 +118,10 @@ const MirrorCoach = ({ user, handleLogout }) => {
       const response = await api.post('/mirror/verify', { code: codeToRun, language });
       setVerification(response.data.verification);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Verification failed.';
+      const msg = toErrorMessage(
+        err.response?.data?.error || err.response?.data || err.message,
+        'Verification failed.'
+      );
       setErrorBanner(msg);
       setVerification({ status: 'error', output: msg });
     } finally {
