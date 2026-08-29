@@ -316,3 +316,12 @@ input:focus, textarea:focus, select:focus {
 .glowing-login-container .loginBx button[type="submit"]:hover {
     box-shadow: 0 0 10px #39FF14, 0 0 35px #39FF14 !important;
 }
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}

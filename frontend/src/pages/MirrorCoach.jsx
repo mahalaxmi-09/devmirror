@@ -60,8 +60,24 @@ const MirrorCoach = ({ user, handleLogout }) => {
   // Camera preview states
   const [cameraActive, setCameraActive] = useState(false);
   const [streamError, setStreamError] = useState('');
+  const [facialTelemetry, setFacialTelemetry] = useState({ tension: false, sleepy: false, emotion: 'NEUTRAL' });
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+
+  // Facial scan telemetry simulator loop
+  useEffect(() => {
+    if (!cameraActive) return;
+    const interval = setInterval(() => {
+      const emotions = ['NEUTRAL', 'NEUTRAL', 'SADNESS', 'FEAR', 'HAPPY'];
+      const randomEmotion = emotions[Math.floor(Math.random() * emotions.length)];
+      setFacialTelemetry({
+        tension: Math.random() > 0.7,
+        sleepy: Math.random() > 0.85,
+        emotion: randomEmotion
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [cameraActive]);
 
   // Microphone speech transcribers
   const [isRecording, setIsRecording] = useState(false);
@@ -786,7 +802,49 @@ const MirrorCoach = ({ user, handleLogout }) => {
                   {/* Camera frame area */}
                   <div className="relative aspect-video w-full bg-black rounded-lg overflow-hidden border border-border-default/50">
                     {cameraActive ? (
-                      <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                      <>
+                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                        
+                        {/* Laser Scanning Indicator */}
+                        <div 
+                          className="absolute inset-0 bg-gradient-to-b from-transparent via-[#39FF14]/15 to-transparent pointer-events-none" 
+                          style={{
+                            animation: 'scanline 2.5s linear infinite',
+                            backgroundSize: '100% 10px'
+                          }}
+                        />
+                        
+                        {/* Face tracker frame visualizer */}
+                        <div className="absolute top-1/4 left-1/3 border border-[#39FF14]/30 w-1/3 h-1/2 rounded-full border-dashed animate-pulse pointer-events-none" />
+
+                        {/* Telemetry Dashboard overlay */}
+                        <div className="absolute bottom-3 left-3 bg-black/80 border border-[#39FF14]/20 rounded p-2.5 font-mono text-[8px] text-left space-y-1 select-none w-36 shadow-lg backdrop-blur-sm">
+                          <div className="text-white font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-[#39FF14] animate-pulse" />
+                            Live Telemetry
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-text-secondary">TENSION:</span>
+                            <span className={facialTelemetry.tension ? 'text-red-400 font-bold' : 'text-brand-primary font-bold'}>
+                              {facialTelemetry.tension ? '⚠️ HIGH' : 'NORMAL'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-text-secondary">SLEEPINESS:</span>
+                            <span className={facialTelemetry.sleepy ? 'text-yellow-400 font-bold animate-pulse' : 'text-brand-primary font-bold'}>
+                              {facialTelemetry.sleepy ? '⚠️ DROWSY' : 'ALERT'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-text-secondary">EMOTION:</span>
+                            <span className={`font-bold ${
+                              facialTelemetry.emotion === 'FEAR' ? 'text-red-400' : (facialTelemetry.emotion === 'SADNESS' ? 'text-blue-400' : 'text-brand-primary')
+                            }`}>
+                              {facialTelemetry.emotion}
+                            </span>
+                          </div>
+                        </div>
+                      </>
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center text-center p-4">
                         <Video size={24} className="text-text-muted mb-2" />
