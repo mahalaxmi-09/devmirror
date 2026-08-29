@@ -2,9 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+import { PDFParse } from 'pdf-parse';
 import authMiddleware from '../middleware/auth.js';
 import { BACKEND_ROOT } from '../config/env.js';
 import { generateStructuredJson } from '../ai/jsonGenerate.js';
@@ -38,13 +36,15 @@ router.post('/pdf', authMiddleware, upload.single('file'), async (req, res) => {
 
   try {
     const dataBuffer = fs.readFileSync(file.path);
-    const pdfData = await pdfParse(dataBuffer);
+    const parser = new PDFParse({ data: dataBuffer });
+    const pdfData = await parser.getText();
+    await parser.destroy();
     fs.unlinkSync(file.path);
 
     res.json({
       success: true,
       text: pdfData.text,
-      pages: pdfData.numpages
+      pages: pdfData.total || 1
     });
   } catch (err) {
     console.error('PDF parser error:', err);
