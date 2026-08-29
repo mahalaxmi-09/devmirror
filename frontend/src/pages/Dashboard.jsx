@@ -174,18 +174,22 @@ const Dashboard = ({ user, handleLogout }) => {
     const latestDate = dates[0];
     if (!latestDate) return 0;
     
-    const diffTime = Math.abs(compareDate - latestDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffTime = Math.abs(today - latestDate);
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays > 1) {
-      return 0;
+      return 0; // Streak broken
+    }
+
+    if (diffDays === 1) {
+      compareDate.setDate(compareDate.getDate() - 1);
     }
 
     for (let i = 0; i < dates.length; i++) {
-      const diff = Math.abs(compareDate - dates[i]);
-      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      const diffTimeLoop = Math.abs(compareDate - dates[i]);
+      const diffDaysLoop = Math.round(diffTimeLoop / (1000 * 60 * 60 * 24));
       
-      if (days === streak) {
+      if (diffDaysLoop === 0) {
         streak++;
         compareDate.setDate(compareDate.getDate() - 1);
       } else {
