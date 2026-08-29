@@ -1,13 +1,15 @@
-import { getAIProviderName, getGeminiApiKey, getOpenAIApiKey, getAnthropicApiKey } from '../config/env.js';
+import { getAIProviderName, getGeminiApiKey, getOpenAIApiKey, getAnthropicApiKey, getGroqApiKey } from '../config/env.js';
 import { GeminiProvider } from './geminiProvider.js';
 import { OpenAIProvider } from './openaiProvider.js';
 import { AnthropicProvider } from './anthropicProvider.js';
+import { GroqProvider } from './groqProvider.js';
 import { AIProviderError } from './provider.js';
 
-const PROVIDER_ORDER = ['gemini', 'openai', 'anthropic'];
+const PROVIDER_ORDER = ['groq', 'gemini', 'openai', 'anthropic'];
 
 export function getConfiguredProviderNames() {
   const configured = [];
+  if (getGroqApiKey()) configured.push('groq');
   if (getGeminiApiKey()) configured.push('gemini');
   if (getOpenAIApiKey()) configured.push('openai');
   if (getAnthropicApiKey()) configured.push('anthropic');
@@ -17,6 +19,12 @@ export function getConfiguredProviderNames() {
 }
 
 export function getAIProviderByName(name) {
+  if (name === 'groq') {
+    if (!getGroqApiKey()) {
+      throw new AIProviderError('AI SERVICE UNAVAILABLE', { code: 'AI_SERVICE_UNAVAILABLE', provider: 'groq' });
+    }
+    return new GroqProvider();
+  }
   if (name === 'gemini') {
     if (!getGeminiApiKey()) {
       throw new AIProviderError('AI SERVICE UNAVAILABLE', { code: 'AI_SERVICE_UNAVAILABLE', provider: 'gemini' });

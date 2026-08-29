@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { generateJson } from './geminiClient.js';
 
+import { getGroqApiKey, getGroqModel } from '../config/env.js';
+
 let openaiClient = null;
 const getOpenAI = () => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -12,6 +14,32 @@ const getOpenAI = () => {
 };
 
 export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain') => {
+  // Priority 1: Groq
+  const groqKey = getGroqApiKey();
+  if (groqKey) {
+    try {
+      console.log('Routing request to Groq...');
+      const groqClient = new OpenAI({
+        apiKey: groqKey,
+        baseURL: 'https://api.groq.com/openai/v1'
+      });
+      const groqModel = getGroqModel() || 'llama-3.3-70b-versatile';
+      const response = await groqClient.chat.completions.create({
+        model: groqModel,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ],
+        response_format: mimeType === 'application/json' ? { type: 'json_object' } : undefined,
+        max_tokens: 2048
+      });
+      return response.choices[0].message.content;
+    } catch (err) {
+      console.error('Groq call failed. Falling back to next provider...', err.message);
+    }
+  }
+
+  // Priority 2: OpenAI (If configured)
   const openai = getOpenAI();
   if (openai) {
     try {
@@ -30,7 +58,7 @@ export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain')
     }
   }
 
-  // Fallback to Gemini
+  // Priority 3: Gemini (Default / Fallback)
   console.log('Routing request to Gemini...');
   if (mimeType === 'application/json') {
     const res = await generateJson(prompt, systemInstruction);

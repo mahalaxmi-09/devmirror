@@ -75,6 +75,14 @@ export function getAnthropicModel() {
   return process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 }
 
+export function getGroqApiKey() {
+  return readKey('GROQ_API_KEY');
+}
+
+export function getGroqModel() {
+  return process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+}
+
 export function isGeminiConfigured() {
   return Boolean(getGeminiApiKey());
 }

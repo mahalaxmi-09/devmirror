@@ -79,13 +79,12 @@ router.post('/run', authMiddleware, async (req, res) => {
     const systemPrompt = `You are Mirror AI - a professional code repair engine.
 Analyze the user's code, error message, and context. Propose a root cause diagnosis and fix.
 Return valid JSON only containing:
-- rootCause: string
-- whyItHappened: string
-- fixedCode: string (COMPLETE corrected code block)
-- changes: string[]
-- testsPerformed: string (tests to run/verify this code)
-- remainingIssues: string
-- preventionAdvice: string`;
+- errorType: string (e.g. TypeError, SyntaxError, LogicError)
+- rootCause: string (technical cause)
+- explanation: string (explanation of resolution)
+- correctedCode: string (COMPLETE corrected code block)
+- verification: string (brief description of tests that should be run)
+- confidence: number (0 to 100)`;
 
     const prompt = `
 Programming Language: ${language}
@@ -114,7 +113,7 @@ Return JSON only.`;
         const cfResponse = await fetch(`${sandboxUrl}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ language, code: latestResult.fixedCode })
+          body: JSON.stringify({ language, code: latestResult.correctedCode })
         });
 
         if (!cfResponse.ok) {
@@ -132,7 +131,7 @@ Return JSON only.`;
           break;
         } else {
           console.warn(`Cloudflare Sandbox verification failed on attempt ${attempt}:`, executionStderr);
-          currentCode = latestResult.fixedCode;
+          currentCode = latestResult.correctedCode;
           currentError = executionStderr || executionStdout || 'Code execution returned non-zero exit code.';
         }
       } else {
@@ -171,31 +170,38 @@ ${verificationBanner}
 ${latestResult.rootCause}
 
 ### 💡 Why It Happened
-${latestResult.whyItHappened}
+${latestResult.explanation}
 
 ### ⚠️ Original Error
 ${error || 'No error log provided.'}
 
 ### ⚙️ Tests Performed
-${latestResult.testsPerformed}
+${latestResult.verification}
 
-### 📌 Remaining Issues
-${latestResult.remainingIssues}
-
-### 🛡️ Prevention Advice
-${latestResult.preventionAdvice}
+### 📊 Confidence
+${latestResult.confidence}%
 `;
 
   res.json({
     success: executionSuccess,
     diagnosis: reportMarkdown.trim(),
-    fixedCode: latestResult.fixedCode,
+    fixedCode: latestResult.correctedCode,
     execution: {
       stdout: executionStdout,
       stderr: executionStderr,
       exitCode: executionExitCode
     },
-    testsPassed: executionSuccess
+    testsPassed: executionSuccess,
+    
+    // Exact structured JSON fields requested by the user
+    errorType: latestResult.errorType,
+    rootCause: latestResult.rootCause,
+    explanation: latestResult.explanation,
+    correctedCode: latestResult.correctedCode,
+    verification: isSandboxAvailable 
+      ? (executionSuccess ? 'VERIFIED_SUCCESS' : 'VERIFIED_FAILED') 
+      : 'UNVERIFIED (Sandbox offline)',
+    confidence: latestResult.confidence
   });
 });
 
