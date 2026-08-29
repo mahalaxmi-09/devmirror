@@ -189,7 +189,10 @@ const Auth = ({ setUser }) => {
       {/* RIGHT SIDE: Auth form */}
       <div className="col-span-1 lg:col-span-5 flex flex-col justify-center items-center p-8 sm:p-12 select-none">
         <div className="glowing-login-container">
-          <div className="box">
+          <div 
+            className="box transition-all duration-300 ease-in-out"
+            style={{ height: isForgotPassword ? '360px' : (isSignIn ? '420px' : '490px') }}
+          >
             <div className="login-card">
               <div className="loginBx w-full">
                 
@@ -283,6 +286,30 @@ const Auth = ({ setUser }) => {
                     />
                   )}
 
+                  {/* Remember Me & Forgot Password (Login Only) */}
+                  {isSignIn && !isForgotPassword && (
+                    <div className="flex justify-between items-center w-full text-[10px] font-mono px-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-text-secondary hover:text-[#39FF14] transition-colors">
+                        <input 
+                          type="checkbox" 
+                          className="accent-[#39FF14] cursor-pointer"
+                        />
+                        Remember me
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsForgotPassword(true);
+                          setError('');
+                          setSuccess('');
+                        }}
+                        className="text-text-muted hover:text-[#39FF14] transition-colors"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                  )}
+
                   {/* Submit Button */}
                   <button
                     type="submit"
@@ -292,7 +319,7 @@ const Auth = ({ setUser }) => {
                     {loading ? 'Processing…' : isForgotPassword ? 'Send Reset Link' : isSignIn ? 'Sign In' : 'Create Account'}
                   </button>
 
-                  <div className="flex justify-between items-center text-[10px] font-mono mt-1 px-1">
+                  <div className="flex justify-center items-center text-[10px] font-mono mt-1 w-full text-center">
                     {isForgotPassword ? (
                       <button 
                         type="button"
@@ -306,26 +333,16 @@ const Auth = ({ setUser }) => {
                         Back to Login
                       </button>
                     ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsForgotPassword(true);
-                            setError('');
-                            setSuccess('');
-                          }}
-                          className="text-text-muted hover:text-[#39FF14] transition-colors"
-                        >
-                          Forgot Password?
-                        </button>
+                      <div className="text-text-muted">
+                        {isSignIn ? "Don't have an account? " : "Already have an account? "}
                         <button 
                           type="button"
                           onClick={toggleMode} 
-                          className="text-[#39FF14] hover:underline transition-colors"
+                          className="text-[#39FF14] hover:underline font-bold transition-colors ml-1"
                         >
                           {isSignIn ? 'Sign up' : 'Sign in'}
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 </form>
