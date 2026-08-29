@@ -190,8 +190,8 @@ const Auth = ({ setUser }) => {
       <div className="col-span-1 lg:col-span-5 flex flex-col justify-center items-center p-8 sm:p-12 select-none">
         <div className="glowing-login-container">
           <div 
-            className="box transition-all duration-300 ease-in-out"
-            style={{ height: isForgotPassword ? '360px' : (isSignIn ? '420px' : '490px') }}
+            className="box"
+            style={{ '--hover-height': isForgotPassword ? '360px' : (isSignIn ? '420px' : '490px') }}
           >
             <div className="login-card">
               <div className="loginBx w-full">
