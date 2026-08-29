@@ -132,3 +132,161 @@ input:focus, textarea:focus, select:focus {
 .wave-delay-3 { animation-delay: 0.45s; }
 .wave-delay-4 { animation-delay: 0.6s; }
 .wave-delay-5 { animation-delay: 0.75s; }
+
+/* Glowing Neon Card Styles */
+@property --a {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+.glowing-login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+.glowing-login-container .box {
+    position: relative;
+    width: 360px;
+    height: 480px;
+    background: repeating-conic-gradient(from var(--a),
+            #39FF14 0%,
+            #39FF14 5%,
+            transparent 5%,
+            transparent 40%,
+            #39FF14 50%);
+    filter: drop-shadow(0 15px 40px rgba(0,0,0,0.8));
+    animation: rotating 4s linear infinite;
+    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: 0.5s;
+}
+
+.glowing-login-container .box:hover {
+    width: 380px;
+    height: 500px;
+}
+
+@keyframes rotating {
+    0% {
+        --a: 0deg;
+    }
+    100% {
+        --a: 360deg;
+    }
+}
+
+.glowing-login-container .box::before {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: repeating-conic-gradient(from var(--a),
+            #39FF14 0%,
+            #39FF14 5%,
+            transparent 5%,
+            transparent 40%,
+            #39FF14 50%);
+    filter: drop-shadow(0 15px 40px rgba(0,0,0,0.8));
+    border-radius: 20px;
+    animation: rotating 4s linear infinite;
+    animation-delay: -1s;
+}
+
+.glowing-login-container .box::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    background: #090D09;
+    border-radius: 15px;
+    border: 6px solid #050705;
+}
+
+.glowing-login-container .login-card {
+    position: absolute;
+    inset: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 10;
+    box-shadow: inset 0 10px 20px rgba(0, 0, 0, 0.6);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+    transition: 0.5s;
+    color: #fff;
+    overflow: hidden;
+}
+
+.glowing-login-container .box:hover .login-card {
+    inset: 15px;
+}
+
+.glowing-login-container .loginBx {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: 14px;
+    width: 88%;
+    transition: 0.5s;
+}
+
+.glowing-login-container .loginBx h2 {
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-weight: 700;
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.glowing-login-container .loginBx h2 i {
+    color: #39FF14;
+    text-shadow: 0 0 5px #39FF14, 0 0 20px #39FF14;
+}
+
+.glowing-login-container .loginBx input {
+    width: 100%;
+    padding: 10px 16px !important;
+    outline: none;
+    font-size: 0.8em;
+    color: #fff !important;
+    background: rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid #1C261D !important;
+    border-radius: 30px !important;
+}
+
+.glowing-login-container .loginBx input:focus {
+    border-color: #39FF14 !important;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3) !important;
+}
+
+.glowing-login-container .loginBx input::placeholder {
+    color: #777;
+}
+
+.glowing-login-container .loginBx button[type="submit"] {
+    background: #39FF14 !important;
+    border: none !important;
+    font-weight: 700;
+    color: #050705 !important;
+    cursor: pointer;
+    transition: 0.5s;
+    border-radius: 30px !important;
+    font-size: 0.8em;
+    padding: 10px 20px;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(57, 255, 20, 0.15);
+}
+
+.glowing-login-container .loginBx button[type="submit"]:hover {
+    box-shadow: 0 0 10px #39FF14, 0 0 35px #39FF14 !important;
+}

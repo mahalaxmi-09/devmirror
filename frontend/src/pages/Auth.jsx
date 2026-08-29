@@ -187,227 +187,152 @@ const Auth = ({ setUser }) => {
       </div>
 
       {/* RIGHT SIDE: Auth form */}
-      <div className="col-span-1 lg:col-span-5 flex flex-col justify-center p-8 sm:p-12 md:p-16">
-        <div className="max-w-md w-full mx-auto space-y-8">
-          
-          <div className="text-center lg:text-left">
-            {backendOk === false && (
-              <div role="alert" className="mb-4 p-3 rounded border border-yellow-500/30 bg-yellow-950/20 text-yellow-200 text-xs font-mono text-left">
-                Backend is waking up or unreachable. Wait 30 seconds, then try again. If this persists, redeploy the Render backend.
-              </div>
-            )}
-            <h2 className="text-3xl font-bold tracking-tight text-text-primary">
-              {isForgotPassword ? 'Reset Password' : isSignIn ? 'Sign In' : 'Create Account'}
-            </h2>
-            <p className="mt-2.5 text-sm text-text-secondary">
-              {isForgotPassword ? (
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setIsForgotPassword(false);
-                    setError('');
-                    setSuccess('');
-                  }}
-                  className="text-brand-primary hover:text-brand-accent transition-colors font-medium underline"
-                >
-                  Back to Sign In
-                </button>
-              ) : (
-                <>
-                  {isSignIn ? "Don't have an account? " : "Already have an account? "}
-                  <button 
-                    type="button"
-                    onClick={toggleMode} 
-                    className="text-brand-primary hover:text-brand-accent transition-colors font-medium underline"
-                  >
-                    {isSignIn ? 'Create one now' : 'Sign in instead'}
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
+      <div className="col-span-1 lg:col-span-5 flex flex-col justify-center items-center p-8 sm:p-12 select-none">
+        <div className="glowing-login-container">
+          <div className="box">
+            <div className="login-card">
+              <div className="loginBx w-full">
+                
+                {backendOk === false && (
+                  <div role="alert" className="mb-2 p-2 rounded border border-yellow-500/30 bg-yellow-950/20 text-yellow-200 text-[9px] font-mono text-center">
+                    Server is waking up...
+                  </div>
+                )}
+                
+                <h2 className="text-xs font-bold tracking-tight text-white mb-1 uppercase font-mono">
+                  <i className="fa-solid fa-right-to-bracket mr-1.5"></i>
+                  {isForgotPassword ? 'Reset Password' : isSignIn ? 'Login' : 'Register'}
+                  <i className="fa-solid fa-heart ml-1.5"></i>
+                </h2>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5 mt-8">
-            
-            {/* Inline Notifications */}
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3.5 rounded border border-red-500/20 bg-red-950/20 text-red-400 text-xs font-mono"
-              >
-                {error}
-              </motion.div>
-            )}
+                <form onSubmit={handleSubmit} className="w-full space-y-3">
+                  
+                  {/* Inline Notifications */}
+                  {error && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-2 rounded border border-red-500/20 bg-red-950/20 text-red-400 text-[10px] font-mono text-center select-text"
+                    >
+                      {error}
+                    </motion.div>
+                  )}
 
-            {success && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3.5 rounded border border-brand-primary/20 bg-brand-primary/5 text-brand-accent text-xs font-mono"
-              >
-                {success}
-              </motion.div>
-            )}
+                  {success && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-2 rounded border border-brand-primary/20 bg-brand-primary/5 text-brand-accent text-[10px] font-mono text-center select-text"
+                    >
+                      {success}
+                    </motion.div>
+                  )}
 
-            {/* Name (Registration Only) */}
-            {!isSignIn && !isForgotPassword && (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Full Name</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
-                    <User size={16} />
-                  </span>
+                  {/* Name (Registration Only) */}
+                  {!isSignIn && !isForgotPassword && (
+                    <input
+                      type="text"
+                      name="full_name"
+                      value={formData.full_name}
+                      onChange={handleInputChange}
+                      placeholder="Full Name"
+                      required
+                    />
+                  )}
+
+                  {/* Email */}
                   <input
-                    type="text"
-                    name="full_name"
-                    value={formData.full_name}
+                    type="email"
+                    name="email"
+                    value={formData.email}
                     onChange={handleInputChange}
-                    className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
-                    placeholder="Ada Lovelace"
+                    placeholder="Email Address"
                     required
                   />
-                </div>
-              </div>
-            )}
 
-            {/* Email */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Email Address</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
-                  <Mail size={16} />
-                </span>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
-                  placeholder="ada@devmirror.ai"
-                  required
-                />
+                  {/* Password */}
+                  {!isForgotPassword && (
+                    <div className="relative w-full">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        placeholder="Password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-muted hover:text-text-secondary"
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Confirm Password (Registration Only) */}
+                  {!isSignIn && !isForgotPassword && (
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      placeholder="Confirm Password"
+                      required
+                    />
+                  )}
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-[#39FF14] text-[#050705] hover:shadow-[0_0_15px_#39FF14] font-bold py-2.5 px-4 rounded-full transition-all text-[11px] uppercase tracking-wider font-mono cursor-pointer"
+                  >
+                    {loading ? 'Processing…' : isForgotPassword ? 'Send Reset Link' : isSignIn ? 'Sign In' : 'Create Account'}
+                  </button>
+
+                  <div className="flex justify-between items-center text-[10px] font-mono mt-1 px-1">
+                    {isForgotPassword ? (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsForgotPassword(false);
+                          setError('');
+                          setSuccess('');
+                        }}
+                        className="text-text-muted hover:text-[#39FF14] transition-colors"
+                      >
+                        Back to Login
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsForgotPassword(true);
+                            setError('');
+                            setSuccess('');
+                          }}
+                          className="text-text-muted hover:text-[#39FF14] transition-colors"
+                        >
+                          Forgot Password?
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={toggleMode} 
+                          className="text-[#39FF14] hover:underline transition-colors"
+                        >
+                          {isSignIn ? 'Sign up' : 'Sign in'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </form>
+
               </div>
             </div>
-
-            {/* Password */}
-            {!isForgotPassword && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Password</label>
-                  {isSignIn && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsForgotPassword(true);
-                        setError('');
-                        setSuccess('');
-                      }}
-                      className="text-[11px] font-mono text-text-muted hover:text-brand-primary transition-colors focus:outline-none"
-                    >
-                      Forgot password?
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 pr-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
-                    placeholder="••••••••"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-secondary"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Confirm Password (Registration Only) */}
-            {!isSignIn && !isForgotPassword && (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Confirm Password</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Remember Me */}
-            {isSignIn && !isForgotPassword && (
-              <div className="flex items-center justify-between text-xs font-mono">
-                <label className="flex items-center gap-2 cursor-pointer text-text-secondary">
-                  <input type="checkbox" className="accent-brand-primary rounded border-border-default bg-panel-default" />
-                  Remember me
-                </label>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent disabled:opacity-50 font-bold py-3.5 px-4 rounded transition-all duration-150 flex items-center justify-center font-sans tracking-wide text-sm"
-            >
-              {loading ? 'Authenticating…' : isForgotPassword ? 'Send Reset Link' : isSignIn ? 'Sign In' : 'Create Account'}
-            </button>
-
-            {/* Divider */}
-            {!isForgotPassword && (
-              <>
-                <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-border-default"></div>
-                  <span className="flex-shrink mx-4 text-[10px] font-mono text-text-muted uppercase">or</span>
-                  <div className="flex-grow border-t border-border-default"></div>
-                </div>
-
-                {/* OAuth GitHub Fallback */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    alert('GitHub connection integration is operational. Continuing in simulated lab environment.');
-                    setFormData({
-                      full_name: 'GitHub Engineer',
-                      email: 'github@devmirror.ai',
-                      password: 'github_oauth_auth_key',
-                      confirmPassword: 'github_oauth_auth_key'
-                    });
-                  }}
-                  className="w-full border border-border-default hover:border-brand-primary bg-panel-default text-text-secondary hover:text-text-primary font-bold py-3 px-4 rounded transition-colors text-sm flex items-center justify-center gap-2.5"
-                >
-                  <span>🐙</span> Continue with GitHub
-                </button>
-              </>
-            )}
-          </form>
-
-          {/* Terms & Privacy */}
-          <p className="text-center text-[10px] font-mono text-text-muted">
-            By signing in, you agree to our <a href="#terms" className="underline hover:text-text-secondary">Terms of Service</a> and <a href="#privacy" className="underline hover:text-text-secondary">Privacy Policy</a>.
-          </p>
-
+          </div>
         </div>
       </div>
 

@@ -67,7 +67,7 @@ app.get('/api/health', async (req, res) => {
   }
 
   res.json({
-    status: (databaseOk && aiOk) ? 'ok' : 'error',
+    status: databaseOk ? 'ok' : 'error',
     ai: aiOk,
     database: databaseOk
   });

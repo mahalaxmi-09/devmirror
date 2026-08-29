@@ -481,9 +481,13 @@ const MirrorCoach = ({ user, handleLogout }) => {
               <p className="text-xs text-text-secondary font-mono mt-1">Practice like it's real. Improve before it is.</p>
             </div>
             <div className="flex items-center gap-2 font-mono text-[10px] px-3 py-1.5 bg-bg-secondary border border-border-default rounded">
-              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-brand-primary animate-pulse' : 'bg-red-500'}`} />
-              <span className={isOnline ? 'text-brand-primary font-bold' : 'text-red-400 font-bold'}>
-                {isOnline ? '● AI ONLINE' : '● BACKEND OFFLINE'}
+              <span className={`w-2 h-2 rounded-full ${
+                !isOnline ? 'bg-red-500' : (backendHealth.ai ? 'bg-brand-primary animate-pulse' : 'bg-yellow-500')
+              }`} />
+              <span className={
+                !isOnline ? 'text-red-400 font-bold' : (backendHealth.ai ? 'text-brand-primary font-bold' : 'text-yellow-400 font-bold')
+              }>
+                {!isOnline ? '● BACKEND OFFLINE' : (backendHealth.ai ? '● AI ONLINE' : '● AI KEYS OFFLINE')}
               </span>
             </div>
           </header>
