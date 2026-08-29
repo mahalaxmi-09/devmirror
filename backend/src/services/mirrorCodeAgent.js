@@ -4,9 +4,10 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { generateStructuredJson } from '../ai/jsonGenerate.js';
 
-const MIRROR_SYSTEM_PROMPT = `You are DevMirror Mirror AI, an expert software debugging and code repair agent.
+function getSystemPromptForMode(mode) {
+  const basePrompt = `You are DevMirror Mirror AI, an expert software debugging and code repair agent.
 
-Analyze the supplied source code and the user's request.
+Analyze the supplied source code, user request, and context attachments.
 
 Never invent an error.
 Identify the exact problem when one exists.
@@ -25,6 +26,26 @@ Return structured JSON containing exactly these fields:
 
 If the code is already correct, explicitly say that it is correct instead of inventing a bug.
 Set severity to "none" when no bug exists and fixedCode should equal the original code.`;
+
+  switch (mode) {
+    case 'quick':
+      return `${basePrompt}\nProvide a extremely concise, rapid diagnosis and a direct code fix immediately. Skip long secondary details.`;
+    case 'deep':
+      return `${basePrompt}\nConduct an exhaustive root-cause analysis. Scan for edge cases, performance trade-offs, state mutations, and architectural implications in detail.`;
+    case 'review':
+      return `${basePrompt}\nAnalyze this as a senior staff code reviewer. Target readability, code smells, duplicate statements, architectural patterns, compliance, and clean formatting.`;
+    case 'security':
+      return `${basePrompt}\nAnalyze this as an expert application security auditor. Scan for OWASP Top 10 vulnerabilities, input injection risks, memory safety concerns, parameter validation, and cryptography errors.`;
+    case 'performance':
+      return `${basePrompt}\nAnalyze this as a performance optimization engineer. Assess asymptotic big-O complexity, runtime bottlenecks, redundant cycles, and resource leaks.`;
+    case 'explain':
+      return `${basePrompt}\nAnalyze this as an empathetic tech lead educator. Explain every concept, line, and function call step-by-step to maximize student comprehension.`;
+    case 'interview':
+      return `${basePrompt}\nPresent the explanation in a structured style typical of senior engineering design interviews. Conclude with 2-3 advanced conceptual verification follow-up questions.`;
+    default:
+      return basePrompt;
+  }
+}
 
 const SUPPORTED_LANGUAGES = new Set([
   'javascript',
@@ -160,7 +181,7 @@ export function isLanguageRunnable(language) {
   return RUNNABLE_LANGUAGES.has(normalizeLanguage(language));
 }
 
-export async function analyzeCode({ code, language, request }) {
+export async function analyzeCode({ code, language, request, mode = 'deep' }) {
   const lang = normalizeLanguage(language);
 
   if (!code || !String(code).trim()) {
@@ -183,7 +204,7 @@ export async function analyzeCode({ code, language, request }) {
 
   let raw;
   try {
-    raw = await generateStructuredJson(prompt, MIRROR_SYSTEM_PROMPT);
+    raw = await generateStructuredJson(prompt, getSystemPromptForMode(mode));
   } catch (error) {
     if (error.code === 'AI_SERVICE_UNAVAILABLE') {
       const err = new Error(error.message || 'Mirror AI is temporarily unavailable.');

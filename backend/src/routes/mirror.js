@@ -41,10 +41,10 @@ function mapError(error, res) {
 }
 
 router.post('/analyze', authMiddleware, async (req, res) => {
-  const { code, language = 'javascript', request } = req.body || {};
+  const { code, language = 'javascript', request, mode = 'deep' } = req.body || {};
 
   try {
-    const result = await analyzeCode({ code, language, request });
+    const result = await analyzeCode({ code, language, request, mode });
     return res.json(result);
   } catch (error) {
     return mapError(error, res);

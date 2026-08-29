@@ -1,24 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Sliders, Monitor, Mic, Video, Eye } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Sliders, Monitor, Mic, Video, Eye, Keyboard } from 'lucide-react';
+
+const LANGUAGES = [
+  'javascript', 'typescript', 'python', 'java', 'go', 'cpp', 'c',
+  'csharp', 'php', 'ruby', 'rust', 'kotlin', 'swift', 'sql', 'html', 'css', 'json'
+];
 
 const Settings = ({ user, handleLogout }) => {
+  // Appearance & Editor settings
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('setting_compact') === 'true');
-  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem('setting_font_size') || '12'));
+  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem('setting_font_size') || '13'));
+  const [wordWrap, setWordWrap] = useState(() => localStorage.getItem('setting_word_wrap') !== 'false');
+  const [lineNumbers, setLineNumbers] = useState(() => localStorage.getItem('setting_line_numbers') !== 'false');
+  const [defaultLanguage, setDefaultLanguage] = useState(() => localStorage.getItem('setting_default_lang') || 'javascript');
+
+  // AI preferences
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('setting_ai_provider') || 'auto');
+  const [analysisMode, setAnalysisMode] = useState(() => localStorage.getItem('setting_analysis_mode') || 'deep');
+  const [responseDetail, setResponseDetail] = useState(() => localStorage.getItem('setting_response_detail') || 'balanced');
   const [autoVerify, setAutoVerify] = useState(() => localStorage.getItem('setting_auto_verify') !== 'false');
-  
+  const [cameraImageAnalysis, setCameraImageAnalysis] = useState(() => localStorage.getItem('setting_camera_analysis') !== 'false');
+
+  // Permission Telemetries
   const [cameraPermission, setCameraPermission] = useState('unknown');
   const [micPermission, setMicPermission] = useState('unknown');
 
   useEffect(() => {
-    // Check permission status if API available
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: 'camera' })
-        .then((status) => setCameraPermission(status.state))
+        .then((status) => {
+          setCameraPermission(status.state);
+          status.onchange = () => setCameraPermission(status.state);
+        })
         .catch(() => {});
         
       navigator.permissions.query({ name: 'microphone' })
-        .then((status) => setMicPermission(status.state))
+        .then((status) => {
+          setMicPermission(status.state);
+          status.onchange = () => setMicPermission(status.state);
+        })
         .catch(() => {});
     }
   }, []);
@@ -114,6 +134,63 @@ const Settings = ({ user, handleLogout }) => {
               </div>
             </section>
 
+            {/* Editor preferences */}
+            <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
+              <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
+                <Keyboard size={14} /> Editor Configuration
+              </h2>
+              <div className="space-y-4 pt-2 text-xs font-mono">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="settings-default-language" className="text-[10px] text-text-muted uppercase">Default Code Language</label>
+                  <select
+                    id="settings-default-language"
+                    value={defaultLanguage}
+                    onChange={(e) => {
+                      setDefaultLanguage(e.target.value);
+                      saveSetting('setting_default_lang', e.target.value);
+                    }}
+                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
+                  >
+                    {LANGUAGES.map((lang) => (
+                      <option key={lang} value={lang}>{lang}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold block text-[11px]">Display Line Numbers</span>
+                    <span className="text-[10px] text-text-muted">Show compiler gutter lines beside the workspace.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={lineNumbers}
+                    onChange={(e) => {
+                      setLineNumbers(e.target.checked);
+                      saveSetting('setting_line_numbers', e.target.checked);
+                    }}
+                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold block text-[11px]">Enable Word Wrapping</span>
+                    <span className="text-[10px] text-text-muted">Wrap code lines to prevent horizontal scrolling.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={wordWrap}
+                    onChange={(e) => {
+                      setWordWrap(e.target.checked);
+                      saveSetting('setting_word_wrap', e.target.checked);
+                    }}
+                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
+                  />
+                </div>
+              </div>
+            </section>
+
             {/* AI Preferences */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
@@ -136,6 +213,45 @@ const Settings = ({ user, handleLogout }) => {
                     <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
                   </select>
                 </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="settings-analysis-mode" className="text-[10px] text-text-muted uppercase">Default Analysis Mode</label>
+                  <select
+                    id="settings-analysis-mode"
+                    value={analysisMode}
+                    onChange={(e) => {
+                      setAnalysisMode(e.target.value);
+                      saveSetting('setting_analysis_mode', e.target.value);
+                    }}
+                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
+                  >
+                    <option value="quick">Quick Debug (Fast Diagnosis)</option>
+                    <option value="deep">Deep Debug (Detailed Root-Cause)</option>
+                    <option value="review">Code Review (Quality & Correctness)</option>
+                    <option value="security">Security Review (OWASP Scan)</option>
+                    <option value="performance">Performance Review (Optimizations)</option>
+                    <option value="explain">Explain (Educational Step-by-Step)</option>
+                    <option value="interview">Interview Mode (Q&A Style)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="settings-response-detail" className="text-[10px] text-text-muted uppercase">Response Detail Level</label>
+                  <select
+                    id="settings-response-detail"
+                    value={responseDetail}
+                    onChange={(e) => {
+                      setResponseDetail(e.target.value);
+                      saveSetting('setting_response_detail', e.target.value);
+                    }}
+                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
+                  >
+                    <option value="concise">Concise Summary</option>
+                    <option value="balanced">Balanced technical review</option>
+                    <option value="detailed">Exhaustive logs and guides</option>
+                  </select>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-bold block text-[11px]">Auto Verify Solution</span>
@@ -154,7 +270,7 @@ const Settings = ({ user, handleLogout }) => {
               </div>
             </section>
 
-            {/* Appearance Settings */}
+            {/* Appearance & Layout */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
                 <Monitor size={14} /> Appearance & Layout
@@ -214,7 +330,8 @@ const Settings = ({ user, handleLogout }) => {
                     micPermission === 'granted' ? 'text-green-400 border-green-500/30' : 'text-yellow-400 border-yellow-500/30'
                   }`}>{micPermission}</span>
                 </div>
-                <div className="flex items-center justify-between">
+                
+                <div className="flex items-center justify-between border-b border-border-default pb-3">
                   <div className="flex items-center gap-2">
                     <Video size={14} className="text-brand-primary" />
                     <div>
@@ -225,6 +342,22 @@ const Settings = ({ user, handleLogout }) => {
                   <span className={`text-[10px] font-bold px-2 py-0.5 border rounded uppercase ${
                     cameraPermission === 'granted' ? 'text-green-400 border-green-500/30' : 'text-yellow-400 border-yellow-500/30'
                   }`}>{cameraPermission}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold block text-[11px]">Enable Screenshot Camera Analysis</span>
+                    <span className="text-[10px] text-text-muted">Allows sending camera snapshot streams to the AI provider.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={cameraImageAnalysis}
+                    onChange={(e) => {
+                      setCameraImageAnalysis(e.target.checked);
+                      saveSetting('setting_camera_analysis', e.target.checked);
+                    }}
+                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
+                  />
                 </div>
               </div>
             </section>
