@@ -1,25 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Sliders, Monitor, Mic, Video, Eye, Keyboard } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Sliders, Monitor, Mic, Video, Eye, Award } from 'lucide-react';
 
-const LANGUAGES = [
-  'javascript', 'typescript', 'python', 'java', 'go', 'cpp', 'c',
-  'csharp', 'php', 'ruby', 'rust', 'kotlin', 'swift', 'sql', 'html', 'css', 'json'
+const PRACTICE_MODES = [
+  { id: 'mock', label: 'Mock Interview' },
+  { id: 'presentation', label: 'Presentation Practice' },
+  { id: 'viva', label: 'Project Viva' },
+  { id: 'technical', label: 'Technical Interview' },
+  { id: 'hr', label: 'HR Interview' },
+  { id: 'resume', label: 'Resume Interview' },
+  { id: 'study', label: 'Study Material Interview' },
+  { id: 'rapid', label: 'Rapid Fire' },
+  { id: 'stress', label: 'Stress Interview' },
+  { id: 'communication', label: 'Communication Practice' },
+  { id: 'placement', label: 'Placement Simulation' },
+  { id: 'weakness', label: 'Weakness Practice' }
 ];
 
 const Settings = ({ user, handleLogout }) => {
-  // Appearance & Editor settings
-  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('setting_compact') === 'true');
-  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem('setting_font_size') || '13'));
-  const [wordWrap, setWordWrap] = useState(() => localStorage.getItem('setting_word_wrap') !== 'false');
-  const [lineNumbers, setLineNumbers] = useState(() => localStorage.getItem('setting_line_numbers') !== 'false');
-  const [defaultLanguage, setDefaultLanguage] = useState(() => localStorage.getItem('setting_default_lang') || 'javascript');
+  // Practice preferences
+  const [defaultMode, setDefaultMode] = useState(() => localStorage.getItem('setting_default_mode') || 'mock');
+  const [difficulty, setDifficulty] = useState(() => localStorage.getItem('setting_difficulty') || 'medium');
+  const [questionCount, setQuestionCount] = useState(() => Number(localStorage.getItem('setting_question_count') || '5'));
+  const [duration, setDuration] = useState(() => Number(localStorage.getItem('setting_duration') || '15'));
+  const [followUp, setFollowUp] = useState(() => localStorage.getItem('setting_follow_up') !== 'false');
 
-  // AI preferences
-  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('setting_ai_provider') || 'auto');
-  const [analysisMode, setAnalysisMode] = useState(() => localStorage.getItem('setting_analysis_mode') || 'deep');
-  const [responseDetail, setResponseDetail] = useState(() => localStorage.getItem('setting_response_detail') || 'balanced');
-  const [autoVerify, setAutoVerify] = useState(() => localStorage.getItem('setting_auto_verify') !== 'false');
-  const [cameraImageAnalysis, setCameraImageAnalysis] = useState(() => localStorage.getItem('setting_camera_analysis') !== 'false');
+  // AI & Feedback preferences
+  const [interviewerStyle, setInterviewerStyle] = useState(() => localStorage.getItem('setting_interviewer_style') || 'mixed');
+  const [feedbackDetail, setFeedbackDetail] = useState(() => localStorage.getItem('setting_feedback_detail') || 'balanced');
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('setting_compact') === 'true');
 
   // Permission Telemetries
   const [cameraPermission, setCameraPermission] = useState('unknown');
@@ -57,7 +65,7 @@ const Settings = ({ user, handleLogout }) => {
             <div className="w-6 h-6 rounded border border-brand-primary flex items-center justify-center bg-panel-default text-brand-primary font-bold text-xs">
               D
             </div>
-            <span className="font-bold tracking-wider text-xs font-mono">DEVMIRROR AI</span>
+            <span className="font-bold tracking-wider text-xs font-mono text-brand-primary">DEVMIRROR AI</span>
           </div>
 
           <nav className="flex flex-col gap-1.5 text-xs font-mono text-text-secondary text-left">
@@ -79,7 +87,7 @@ const Settings = ({ user, handleLogout }) => {
             </a>
 
             <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest px-3 mt-6 mb-2 font-bold">System</div>
-            <a href="/settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded bg-panel-default border border-border-default text-brand-primary">
+            <a href="/settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded bg-panel-default border border-border-default text-brand-primary font-bold">
               <SettingsIcon size={14} /> Settings
             </a>
           </nav>
@@ -112,7 +120,7 @@ const Settings = ({ user, handleLogout }) => {
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
               <SettingsIcon className="text-brand-primary" size={28} /> Settings
             </h1>
-            <p className="text-sm text-text-secondary font-mono mt-1">Configure your personal AI workspace and telemetry settings.</p>
+            <p className="text-sm text-text-secondary font-mono mt-1">Configure your personal AI interviewer and communication feedback tools.</p>
           </header>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -134,56 +142,94 @@ const Settings = ({ user, handleLogout }) => {
               </div>
             </section>
 
-            {/* Editor preferences */}
+            {/* Interview Settings */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
-                <Keyboard size={14} /> Editor Configuration
+                <Award size={14} /> Interview Preferences
               </h2>
               <div className="space-y-4 pt-2 text-xs font-mono">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="settings-default-language" className="text-[10px] text-text-muted uppercase">Default Code Language</label>
+                  <label htmlFor="settings-default-mode" className="text-[10px] text-text-muted uppercase">Default Prep Mode</label>
                   <select
-                    id="settings-default-language"
-                    value={defaultLanguage}
+                    id="settings-default-mode"
+                    value={defaultMode}
                     onChange={(e) => {
-                      setDefaultLanguage(e.target.value);
-                      saveSetting('setting_default_lang', e.target.value);
+                      setDefaultMode(e.target.value);
+                      saveSetting('setting_default_mode', e.target.value);
                     }}
                     className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
                   >
-                    {LANGUAGES.map((lang) => (
-                      <option key={lang} value={lang}>{lang}</option>
+                    {PRACTICE_MODES.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold block text-[11px]">Display Line Numbers</span>
-                    <span className="text-[10px] text-text-muted">Show compiler gutter lines beside the workspace.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={lineNumbers}
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="settings-difficulty" className="text-[10px] text-text-muted uppercase">Difficulty Rating</label>
+                  <select
+                    id="settings-difficulty"
+                    value={difficulty}
                     onChange={(e) => {
-                      setLineNumbers(e.target.checked);
-                      saveSetting('setting_line_numbers', e.target.checked);
+                      setDifficulty(e.target.value);
+                      saveSetting('setting_difficulty', e.target.value);
                     }}
-                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
-                  />
+                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
+                  >
+                    <option value="beginner">Beginner (Foundations)</option>
+                    <option value="intermediate">Intermediate (Standard)</option>
+                    <option value="advanced">Advanced (Deep Dive)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="settings-questions" className="text-[10px] text-text-muted uppercase">Question Limit</label>
+                    <select
+                      id="settings-questions"
+                      value={questionCount}
+                      onChange={(e) => {
+                        setQuestionCount(Number(e.target.value));
+                        saveSetting('setting_question_count', e.target.value);
+                      }}
+                      className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none"
+                    >
+                      <option value="5">5 Questions</option>
+                      <option value="10">10 Questions</option>
+                      <option value="15">15 Questions</option>
+                      <option value="20">20 Questions</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="settings-duration" className="text-[10px] text-text-muted uppercase">Duration Limit</label>
+                    <select
+                      id="settings-duration"
+                      value={duration}
+                      onChange={(e) => {
+                        setDuration(Number(e.target.value));
+                        saveSetting('setting_duration', e.target.value);
+                      }}
+                      className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none"
+                    >
+                      <option value="10">10 Minutes</option>
+                      <option value="15">15 Minutes</option>
+                      <option value="20">20 Minutes</option>
+                      <option value="30">30 Minutes</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="font-bold block text-[11px]">Enable Word Wrapping</span>
-                    <span className="text-[10px] text-text-muted">Wrap code lines to prevent horizontal scrolling.</span>
+                    <span className="font-bold block text-[11px]">Enable Follow-up Questions</span>
+                    <span className="text-[10px] text-text-muted">Interviewer asks adaptive follow-ups based on response quality.</span>
                   </div>
                   <input
                     type="checkbox"
-                    checked={wordWrap}
+                    checked={followUp}
                     onChange={(e) => {
-                      setWordWrap(e.target.checked);
-                      saveSetting('setting_word_wrap', e.target.checked);
+                      setFollowUp(e.target.checked);
+                      saveSetting('setting_follow_up', e.target.checked);
                     }}
                     className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
                   />
@@ -194,83 +240,46 @@ const Settings = ({ user, handleLogout }) => {
             {/* AI Preferences */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
-                <Sliders size={14} /> AI Engine Preferences
+                <Sliders size={14} /> AI Evaluator Preferences
               </h2>
               <div className="space-y-4 pt-2 text-xs font-mono">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="settings-ai-provider" className="text-[10px] text-text-muted uppercase">Preferred AI Engine</label>
+                  <label htmlFor="settings-interviewer-style" className="text-[10px] text-text-muted uppercase">Interviewer Personality</label>
                   <select
-                    id="settings-ai-provider"
-                    value={aiProvider}
+                    id="settings-interviewer-style"
+                    value={interviewerStyle}
                     onChange={(e) => {
-                      setAiProvider(e.target.value);
-                      saveSetting('setting_ai_provider', e.target.value);
+                      setInterviewerStyle(e.target.value);
+                      saveSetting('setting_interviewer_style', e.target.value);
                     }}
                     className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
                   >
-                    <option value="auto">Auto Fallback (Recommended)</option>
-                    <option value="openai">OpenAI ChatGPT (gpt-4o)</option>
-                    <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
+                    <option value="mixed">Mixed HR & Tech Balanced</option>
+                    <option value="technical">Highly Technical & Analytical</option>
+                    <option value="hr">HR & Soft-skills Evaluator</option>
                   </select>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="settings-analysis-mode" className="text-[10px] text-text-muted uppercase">Default Analysis Mode</label>
+                  <label htmlFor="settings-feedback-detail" className="text-[10px] text-text-muted uppercase">Feedback Detail Level</label>
                   <select
-                    id="settings-analysis-mode"
-                    value={analysisMode}
+                    id="settings-feedback-detail"
+                    value={feedbackDetail}
                     onChange={(e) => {
-                      setAnalysisMode(e.target.value);
-                      saveSetting('setting_analysis_mode', e.target.value);
+                      setFeedbackDetail(e.target.value);
+                      saveSetting('setting_feedback_detail', e.target.value);
                     }}
                     className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
                   >
-                    <option value="quick">Quick Debug (Fast Diagnosis)</option>
-                    <option value="deep">Deep Debug (Detailed Root-Cause)</option>
-                    <option value="review">Code Review (Quality & Correctness)</option>
-                    <option value="security">Security Review (OWASP Scan)</option>
-                    <option value="performance">Performance Review (Optimizations)</option>
-                    <option value="explain">Explain (Educational Step-by-Step)</option>
-                    <option value="interview">Interview Mode (Q&A Style)</option>
+                    <option value="concise">Concise Summary Card</option>
+                    <option value="balanced">Balanced metrics & suggestions</option>
+                    <option value="detailed">Exhaustive template guidelines</option>
                   </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="settings-response-detail" className="text-[10px] text-text-muted uppercase">Response Detail Level</label>
-                  <select
-                    id="settings-response-detail"
-                    value={responseDetail}
-                    onChange={(e) => {
-                      setResponseDetail(e.target.value);
-                      saveSetting('setting_response_detail', e.target.value);
-                    }}
-                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
-                  >
-                    <option value="concise">Concise Summary</option>
-                    <option value="balanced">Balanced technical review</option>
-                    <option value="detailed">Exhaustive logs and guides</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold block text-[11px]">Auto Verify Solution</span>
-                    <span className="text-[10px] text-text-muted">Automatically compile & test AI-generated code patches.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={autoVerify}
-                    onChange={(e) => {
-                      setAutoVerify(e.target.checked);
-                      saveSetting('setting_auto_verify', e.target.checked);
-                    }}
-                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
-                  />
                 </div>
               </div>
             </section>
 
-            {/* Appearance & Layout */}
+            {/* Layout settings */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
                 <Monitor size={14} /> Appearance & Layout
@@ -291,31 +300,13 @@ const Settings = ({ user, handleLogout }) => {
                     className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
                   />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="settings-font-size" className="text-[10px] text-text-muted uppercase">Editor Code Font Size</label>
-                  <select
-                    id="settings-font-size"
-                    value={fontSize}
-                    onChange={(e) => {
-                      setFontSize(Number(e.target.value));
-                      saveSetting('setting_font_size', e.target.value);
-                    }}
-                    className="bg-bg-secondary border border-border-default rounded px-3 py-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-primary"
-                  >
-                    <option value="11">11px (Tiny)</option>
-                    <option value="12">12px (Compact)</option>
-                    <option value="13">13px (Default)</option>
-                    <option value="14">14px (Medium)</option>
-                    <option value="16">16px (Large)</option>
-                  </select>
-                </div>
               </div>
             </section>
 
-            {/* Telemetry Permissions */}
+            {/* Permissions */}
             <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
               <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
-                <Shield size={14} /> Device Permission Telemetry
+                <Shield size={14} /> Telemetry Permissions
               </h2>
               <div className="space-y-4 pt-2 text-xs font-mono">
                 <div className="flex items-center justify-between border-b border-border-default pb-3">
@@ -323,54 +314,37 @@ const Settings = ({ user, handleLogout }) => {
                     <Mic size={14} className="text-brand-primary" />
                     <div>
                       <span className="font-bold block text-[11px]">Microphone Permissions</span>
-                      <span className="text-[10px] text-text-muted">Web Speech API Voice input permission status.</span>
+                      <span className="text-[10px] text-text-muted">Web Speech API audio recording status.</span>
                     </div>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 border rounded uppercase ${
                     micPermission === 'granted' ? 'text-green-400 border-green-500/30' : 'text-yellow-400 border-yellow-500/30'
                   }`}>{micPermission}</span>
                 </div>
-                
-                <div className="flex items-center justify-between border-b border-border-default pb-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Video size={14} className="text-brand-primary" />
                     <div>
                       <span className="font-bold block text-[11px]">Camera Permissions</span>
-                      <span className="text-[10px] text-text-muted">Gaze/telemetry detection webcam permissions status.</span>
+                      <span className="text-[10px] text-text-muted">Live practice visual preview permission status.</span>
                     </div>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 border rounded uppercase ${
                     cameraPermission === 'granted' ? 'text-green-400 border-green-500/30' : 'text-yellow-400 border-yellow-500/30'
                   }`}>{cameraPermission}</span>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold block text-[11px]">Enable Screenshot Camera Analysis</span>
-                    <span className="text-[10px] text-text-muted">Allows sending camera snapshot streams to the AI provider.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={cameraImageAnalysis}
-                    onChange={(e) => {
-                      setCameraImageAnalysis(e.target.checked);
-                      saveSetting('setting_camera_analysis', e.target.checked);
-                    }}
-                    className="w-4 h-4 accent-brand-primary bg-bg-secondary border-border-default rounded"
-                  />
-                </div>
               </div>
             </section>
           </div>
 
-          {/* Privacy Information Panel */}
+          {/* Privacy */}
           <section className="bg-panel-default border border-border-default rounded-xl p-6 space-y-3">
             <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-brand-primary flex items-center gap-2">
-              <Eye size={14} /> Security & Privacy Policies
+              <Eye size={14} /> Privacy & Workspace Standards
             </h2>
             <div className="text-xs text-text-secondary leading-relaxed font-sans space-y-2 pt-2">
-              <p>🔑 <strong>API Security</strong>: Your OpenAI and Gemini API credentials are never exposed to the browser. All key resolution is managed securely via backend environment variables.</p>
-              <p>📂 <strong>Ephemeral Uploads</strong>: Source files and technical PDFs are parsed dynamically in memory or stored in isolated temporary workspaces. No documents are retained permanently on our servers.</p>
+              <p>🔒 <strong>Secure Caching</strong>: Resume uploads, PDF files, and viva responses are cached strictly in browser memory or temporary databases, never sold, and can be purged at any time from your History page.</p>
+              <p>🎥 <strong>Media Stream Protection</strong>: Live camera frames and vocal recordings are parsed ephemerally on-the-fly and never recorded or uploaded permanently to external clouds.</p>
             </div>
           </section>
 
