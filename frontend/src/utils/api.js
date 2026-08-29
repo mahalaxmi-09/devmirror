@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const RENDER_API_URL = 'https://devmirror-7viq.onrender.com/api';
+const RENDER_API_URL = 'https://devmirror-backend.onrender.com/api';
 
 export function resolveApiBaseUrl() {
   const fromEnv = import.meta.env.VITE_API_URL?.trim();
