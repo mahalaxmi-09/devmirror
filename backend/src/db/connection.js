@@ -6,63 +6,70 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const isPostgres = !!process.env.DATABASE_URL;
+let usePostgres = !!process.env.DATABASE_URL;
 let dbInstance = null;
 let pgPool = null;
 
 export const initDb = async () => {
-  if (isPostgres) {
-    console.log('Connecting to PostgreSQL database...');
-    pgPool = new pg.Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 15000,
-      idleTimeoutMillis: 10000,
-      max: 10
-    });
+  if (usePostgres) {
+    try {
+      console.log('Connecting to PostgreSQL database...');
+      pgPool = new pg.Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 10000,
+        max: 10
+      });
 
-    const client = await Promise.race([
-      pgPool.connect(),
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('PostgreSQL connection timed out after 15s')), 15000);
-      })
-    ]);
-    client.release();
-    console.log('PostgreSQL connected successfully.');
-    
-    await createTablesPostgres();
-    try {
-      await pgPool.query('ALTER TABLE missions ADD COLUMN screenshot_path VARCHAR(255)');
-    } catch (e) {}
-    try {
-      await pgPool.query("ALTER TABLE missions ADD COLUMN input_mode VARCHAR(50) DEFAULT 'text'");
-    } catch (e) {}
-    try {
-      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
-    } catch (e) {}
-    try {
-      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN session_mode VARCHAR(50)');
-    } catch (e) {}
-    try {
-      await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN completed_at TIMESTAMP');
-    } catch (e) {}
-  } else {
-    console.log('Using SQLite fallback database...');
-    const dbPath = path.resolve(process.cwd(), 'devmirror.db');
-    
-    dbInstance = new sqlite3.Database(dbPath);
-    console.log(`SQLite database file loaded: ${dbPath}`);
-    
-    await createTablesSqlite();
-    const sqliteAlter = (sql) => new Promise((resolve) => {
-      dbInstance.run(sql, () => resolve());
-    });
-    await sqliteAlter('ALTER TABLE missions ADD COLUMN screenshot_path TEXT');
-    await sqliteAlter("ALTER TABLE missions ADD COLUMN input_mode TEXT DEFAULT 'text'");
-    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
-    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN session_mode TEXT');
-    await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN completed_at DATETIME');
+      const client = await Promise.race([
+        pgPool.connect(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('PostgreSQL connection timed out after 15s')), 15000);
+        })
+      ]);
+      client.release();
+      console.log('PostgreSQL connected successfully.');
+      
+      await createTablesPostgres();
+      try {
+        await pgPool.query('ALTER TABLE missions ADD COLUMN screenshot_path VARCHAR(255)');
+      } catch (e) {}
+      try {
+        await pgPool.query("ALTER TABLE missions ADD COLUMN input_mode VARCHAR(50) DEFAULT 'text'");
+      } catch (e) {}
+      try {
+        await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
+      } catch (e) {}
+      try {
+        await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN session_mode VARCHAR(50)');
+      } catch (e) {}
+      try {
+        await pgPool.query('ALTER TABLE mirror_sessions ADD COLUMN completed_at TIMESTAMP');
+      } catch (e) {}
+      return; // PG initialized successfully
+    } catch (err) {
+      console.error('PostgreSQL connection failed. Falling back to SQLite database...', err);
+      usePostgres = false;
+    }
   }
+
+  // SQLite fallback
+  console.log('Using SQLite fallback database...');
+  const dbPath = path.resolve(process.cwd(), 'devmirror.db');
+  
+  dbInstance = new sqlite3.Database(dbPath);
+  console.log(`SQLite database file loaded: ${dbPath}`);
+  
+  await createTablesSqlite();
+  const sqliteAlter = (sql) => new Promise((resolve) => {
+    dbInstance.run(sql, () => resolve());
+  });
+  await sqliteAlter('ALTER TABLE missions ADD COLUMN screenshot_path TEXT');
+  await sqliteAlter("ALTER TABLE missions ADD COLUMN input_mode TEXT DEFAULT 'text'");
+  await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN project_context TEXT');
+  await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN session_mode TEXT');
+  await sqliteAlter('ALTER TABLE mirror_sessions ADD COLUMN completed_at DATETIME');
 };
 
 const createTablesPostgres = async () => {
@@ -385,7 +392,7 @@ const createTablesSqlite = () => {
 };
 
 export const query = (text, params = []) => {
-  if (isPostgres) {
+  if (usePostgres) {
     return pgPool.query(text, params);
   } else {
     let sqliteSql = text.replace(/\$(\d+)/g, '?');
