@@ -13,6 +13,7 @@ import { getAIProviderName, getGeminiKeyStatus } from './config/env.js';
 import { pingAllProviders } from './ai/providerFactory.js';
 import { BACKEND_ROOT } from './config/env.js';
 import { runStatelessDebug } from './services/statelessDebug.js';
+import debugRouter from './routes/debug.js';
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -94,27 +95,7 @@ app.get('/api/ai/health', async (req, res) => {
   }
 });
 
-app.post('/api/debug', authMiddleware, async (req, res) => {
-  const { code, language, error, context } = req.body;
-  if (!code) {
-    return res.status(400).json({ error: 'Code block is required for debugging.' });
-  }
-  try {
-    const result = await runStatelessDebug(code, language, error, context);
-    res.json(result);
-  } catch (err) {
-    console.error('Error in stateless debugging endpoint:', err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-      rootCause: 'Internal system error occurred',
-      explanation: 'Our backend AI system encountered an unhandled exception.',
-      fixedCode: code,
-      changes: [],
-      confidence: 0
-    });
-  }
-});
+app.use('/api/debug', debugRouter);
 
 app.use((err, req, res, next) => {
   console.error('Unhandled Server Error:', err);

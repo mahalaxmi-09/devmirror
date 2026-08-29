@@ -59,7 +59,7 @@ const SkillDebug = () => {
     setInstantErrorMsg('');
     setInstantResult(null);
     try {
-      const response = await api.post('/debug', {
+      const response = await api.post('/debug/run', {
         code: instantCode,
         language: instantLanguage,
         error: instantError,
@@ -728,25 +728,36 @@ const SkillDebug = () => {
                       </div>
                     )}
 
-                    {/* Explanations */}
+                     {/* Explanations */}
                     <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Root Cause</span>
-                        <p className="text-xs leading-relaxed text-text-primary">{instantResult.rootCause}</p>
-                      </div>
-                      <div className="border-t border-border-default/50 pt-3.5 space-y-1">
-                        <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Resolution Explanation</span>
-                        <p className="text-xs leading-relaxed text-text-secondary">{instantResult.explanation}</p>
-                      </div>
-                      {instantResult.changes && instantResult.changes.length > 0 && (
-                        <div className="border-t border-border-default/50 pt-3.5 space-y-1">
-                          <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Applied Changes</span>
-                          <ul className="list-disc list-inside text-xs text-text-secondary space-y-1 font-mono">
-                            {instantResult.changes.map((c, i) => (
-                              <li key={i}>{c}</li>
-                            ))}
-                          </ul>
+                      {instantResult.diagnosis ? (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Sandbox Execution Diagnosis</span>
+                          <pre className="text-xs leading-relaxed text-text-secondary whitespace-pre-wrap font-sans mt-2 bg-bg-secondary border border-border-default/40 p-4 rounded-lg select-text">
+                            {instantResult.diagnosis}
+                          </pre>
                         </div>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Root Cause</span>
+                            <p className="text-xs leading-relaxed text-text-primary">{instantResult.rootCause}</p>
+                          </div>
+                          <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                            <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Resolution Explanation</span>
+                            <p className="text-xs leading-relaxed text-text-secondary">{instantResult.explanation}</p>
+                          </div>
+                          {instantResult.changes && instantResult.changes.length > 0 && (
+                            <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                              <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Applied Changes</span>
+                              <ul className="list-disc list-inside text-xs text-text-secondary space-y-1 font-mono">
+                                {instantResult.changes.map((c, i) => (
+                                  <li key={i}>{c}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
 

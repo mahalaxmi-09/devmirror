@@ -1,0 +1,13 @@
+{
+  "name": "devmirror-sandbox-worker",
+  "version": "1.0.0",
+  "description": "Secure code-execution sandbox worker using Cloudflare Containers SDK",
+  "main": "src/index.js",
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/sandbox": "next"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
