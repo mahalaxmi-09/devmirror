@@ -23,7 +23,11 @@ function readKey(name) {
 }
 
 export function getAIProviderName() {
-  return String(process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
+  if (process.env.AI_PROVIDER) {
+    return String(process.env.AI_PROVIDER).trim().toLowerCase();
+  }
+  if (getGroqApiKey()) return 'groq';
+  return 'gemini';
 }
 
 export function getGeminiApiKey() {
@@ -80,7 +84,7 @@ export function getGroqApiKey() {
 }
 
 export function getGroqModel() {
-  return process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  return process.env.GROQ_MODEL || 'groq/compound';
 }
 
 export function isGeminiConfigured() {

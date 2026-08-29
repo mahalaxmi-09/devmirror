@@ -9,7 +9,7 @@ import {
 
 export class GroqProvider extends AIProvider {
   constructor() {
-    const model = getGroqModel() || 'llama-3.3-70b-versatile';
+    const model = getGroqModel() || 'groq/compound';
     super({ name: 'groq', model });
     const apiKey = getGroqApiKey();
     if (!apiKey) {

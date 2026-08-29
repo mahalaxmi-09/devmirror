@@ -23,7 +23,7 @@ export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain')
         apiKey: groqKey,
         baseURL: 'https://api.groq.com/openai/v1'
       });
-      const groqModel = getGroqModel() || 'llama-3.3-70b-versatile';
+      const groqModel = getGroqModel() || 'groq/compound';
       const response = await groqClient.chat.completions.create({
         model: groqModel,
         messages: [
