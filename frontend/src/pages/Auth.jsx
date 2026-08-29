@@ -6,6 +6,7 @@ import { toErrorMessage } from '../utils/errorMessage';
 
 const Auth = ({ setUser }) => {
   const [isSignIn, setIsSignIn] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
@@ -24,6 +25,7 @@ const Auth = ({ setUser }) => {
 
   const toggleMode = () => {
     setIsSignIn(!isSignIn);
+    setIsForgotPassword(false);
     setError('');
     setSuccess('');
     setFormData({ full_name: '', email: '', password: '', confirmPassword: '' });
@@ -38,6 +40,23 @@ const Auth = ({ setUser }) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    if (isForgotPassword) {
+      if (!formData.email) {
+        setError('Email is required.');
+        return;
+      }
+      setLoading(true);
+      try {
+        const response = await api.post('/auth/forgot-password', { email: formData.email });
+        setSuccess(response.data.message || 'Simulated reset link sent.');
+      } catch (err) {
+        setError(toErrorMessage(err.response?.data?.error || err.response?.data || err.message, 'Failed to send reset link.'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     // Validations
     if (!formData.email || !formData.password) {
@@ -178,16 +197,33 @@ const Auth = ({ setUser }) => {
               </div>
             )}
             <h2 className="text-3xl font-bold tracking-tight text-text-primary">
-              {isSignIn ? 'Sign In' : 'Create Account'}
+              {isForgotPassword ? 'Reset Password' : isSignIn ? 'Sign In' : 'Create Account'}
             </h2>
             <p className="mt-2.5 text-sm text-text-secondary">
-              {isSignIn ? "Don't have an account? " : "Already have an account? "}
-              <button 
-                onClick={toggleMode} 
-                className="text-brand-primary hover:text-brand-accent transition-colors font-medium underline"
-              >
-                {isSignIn ? 'Create one now' : 'Sign in instead'}
-              </button>
+              {isForgotPassword ? (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPassword(false);
+                    setError('');
+                    setSuccess('');
+                  }}
+                  className="text-brand-primary hover:text-brand-accent transition-colors font-medium underline"
+                >
+                  Back to Sign In
+                </button>
+              ) : (
+                <>
+                  {isSignIn ? "Don't have an account? " : "Already have an account? "}
+                  <button 
+                    type="button"
+                    onClick={toggleMode} 
+                    className="text-brand-primary hover:text-brand-accent transition-colors font-medium underline"
+                  >
+                    {isSignIn ? 'Create one now' : 'Sign in instead'}
+                  </button>
+                </>
+              )}
             </p>
           </div>
 
@@ -216,7 +252,7 @@ const Auth = ({ setUser }) => {
             )}
 
             {/* Name (Registration Only) */}
-            {!isSignIn && (
+            {!isSignIn && !isForgotPassword && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Full Name</label>
                 <div className="relative">
@@ -256,40 +292,50 @@ const Auth = ({ setUser }) => {
             </div>
 
             {/* Password */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Password</label>
-                {isSignIn && (
-                  <a href="#forgot" className="text-[11px] font-mono text-text-muted hover:text-brand-primary transition-colors">
-                    Forgot password?
-                  </a>
-                )}
+            {!isForgotPassword && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Password</label>
+                  {isSignIn && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setError('');
+                        setSuccess('');
+                      }}
+                      className="text-[11px] font-mono text-text-muted hover:text-brand-primary transition-colors focus:outline-none"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
+                    <Lock size={16} />
+                  </span>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 pr-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
+                    placeholder="••••••••"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-secondary"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-text-muted">
-                  <Lock size={16} />
-                </span>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="w-full bg-panel-default border border-border-default rounded p-3 pl-10 pr-10 text-sm text-text-primary focus:border-brand-primary focus:outline-none transition-colors"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-secondary"
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
+            )}
 
             {/* Confirm Password (Registration Only) */}
-            {!isSignIn && (
+            {!isSignIn && !isForgotPassword && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-mono tracking-wider text-text-secondary uppercase">Confirm Password</label>
                 <div className="relative">
@@ -310,7 +356,7 @@ const Auth = ({ setUser }) => {
             )}
 
             {/* Remember Me */}
-            {isSignIn && (
+            {isSignIn && !isForgotPassword && (
               <div className="flex items-center justify-between text-xs font-mono">
                 <label className="flex items-center gap-2 cursor-pointer text-text-secondary">
                   <input type="checkbox" className="accent-brand-primary rounded border-border-default bg-panel-default" />
@@ -325,32 +371,36 @@ const Auth = ({ setUser }) => {
               disabled={loading}
               className="w-full bg-brand-primary text-bg-dominant hover:bg-brand-accent disabled:opacity-50 font-bold py-3.5 px-4 rounded transition-all duration-150 flex items-center justify-center font-sans tracking-wide text-sm"
             >
-              {loading ? 'Authenticating…' : isSignIn ? 'Sign In' : 'Create Account'}
+              {loading ? 'Authenticating…' : isForgotPassword ? 'Send Reset Link' : isSignIn ? 'Sign In' : 'Create Account'}
             </button>
 
             {/* Divider */}
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-border-default"></div>
-              <span className="flex-shrink mx-4 text-[10px] font-mono text-text-muted uppercase">or</span>
-              <div className="flex-grow border-t border-border-default"></div>
-            </div>
+            {!isForgotPassword && (
+              <>
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-border-default"></div>
+                  <span className="flex-shrink mx-4 text-[10px] font-mono text-text-muted uppercase">or</span>
+                  <div className="flex-grow border-t border-border-default"></div>
+                </div>
 
-            {/* OAuth GitHub Fallback */}
-            <button
-              type="button"
-              onClick={() => {
-                alert('GitHub connection integration is operational. Continuing in simulated lab environment.');
-                setFormData({
-                  full_name: 'GitHub Engineer',
-                  email: 'github@devmirror.ai',
-                  password: 'github_oauth_auth_key',
-                  confirmPassword: 'github_oauth_auth_key'
-                });
-              }}
-              className="w-full border border-border-default hover:border-brand-primary bg-panel-default text-text-secondary hover:text-text-primary font-bold py-3 px-4 rounded transition-colors text-sm flex items-center justify-center gap-2.5"
-            >
-              <span>🐙</span> Continue with GitHub
-            </button>
+                {/* OAuth GitHub Fallback */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    alert('GitHub connection integration is operational. Continuing in simulated lab environment.');
+                    setFormData({
+                      full_name: 'GitHub Engineer',
+                      email: 'github@devmirror.ai',
+                      password: 'github_oauth_auth_key',
+                      confirmPassword: 'github_oauth_auth_key'
+                    });
+                  }}
+                  className="w-full border border-border-default hover:border-brand-primary bg-panel-default text-text-secondary hover:text-text-primary font-bold py-3 px-4 rounded transition-colors text-sm flex items-center justify-center gap-2.5"
+                >
+                  <span>🐙</span> Continue with GitHub
+                </button>
+              </>
+            )}
           </form>
 
           {/* Terms & Privacy */}

@@ -100,4 +100,25 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 });
 
+// Forgot Password endpoint
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  try {
+    const result = await query('SELECT id, email FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'No user registered with this email.' });
+    }
+    
+    // Simulate sending reset instructions
+    res.json({ message: 'A simulated password reset instructions link has been sent to your email.' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process password reset request.' });
+  }
+});
+
 export default router;
