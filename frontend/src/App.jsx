@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import SkillDebug from './pages/SkillDebug';
 import SkillMirror from './pages/SkillMirror';
 import MirrorCoach from './pages/MirrorCoach';
+import Settings from './pages/Settings';
+import HistoryPage from './pages/HistoryPage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -82,6 +84,18 @@ function App() {
         <Route 
           path="/mirror" 
           element={user ? <MirrorCoach user={user} handleLogout={handleLogout} /> : <Navigate to="/auth" replace />} 
+        />
+
+        {/* Protected System Settings */}
+        <Route 
+          path="/settings" 
+          element={user ? <Settings user={user} handleLogout={handleLogout} /> : <Navigate to="/auth" replace />} 
+        />
+
+        {/* Protected History Page */}
+        <Route 
+          path="/history" 
+          element={user ? <HistoryPage user={user} handleLogout={handleLogout} /> : <Navigate to="/auth" replace />} 
         />
 
         {/* Catch-all redirect */}

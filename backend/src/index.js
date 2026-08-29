@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
-import { initDb } from './db/connection.js';
+import { initDb, query } from './db/connection.js';
 import authRouter from './routes/auth.js';
 import missionsRouter from './routes/missions.js';
 import skillsRouter from './routes/skills.js';
@@ -47,8 +47,29 @@ app.use('/api/missions', missionsRouter);
 app.use('/api/mirror', mirrorRouter);
 app.use('/api', skillsRouter);
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date() });
+app.get('/api/health', async (req, res) => {
+  let databaseOk = false;
+  let aiOk = false;
+
+  try {
+    const dbRes = await query('SELECT 1');
+    if (dbRes) databaseOk = true;
+  } catch (err) {
+    console.error('Health check database error:', err);
+  }
+
+  try {
+    const aiHealth = await pingAllProviders();
+    if (aiHealth?.status === 'connected') aiOk = true;
+  } catch (err) {
+    console.error('Health check AI error:', err);
+  }
+
+  res.json({
+    status: (databaseOk && aiOk) ? 'ok' : 'error',
+    ai: aiOk,
+    database: databaseOk
+  });
 });
 
 app.get('/api/ai/health', async (req, res) => {

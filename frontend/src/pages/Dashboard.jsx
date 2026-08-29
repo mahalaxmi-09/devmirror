@@ -6,7 +6,6 @@ import { toErrorMessage } from '../utils/errorMessage';
 
 const Dashboard = ({ user, handleLogout }) => {
   const [missions, setMissions] = useState([]);
-  const [challenges, setChallenges] = useState([]);
   const [skills, setSkills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -50,20 +49,17 @@ const Dashboard = ({ user, handleLogout }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [missionsRes, challengesRes, skillsRes] = await Promise.all([
+        const [missionsRes, skillsRes] = await Promise.all([
           api.get('/missions'),
-          api.get('/challenges'),
           api.get('/skills')
         ]);
         setMissions(Array.isArray(missionsRes.data) ? missionsRes.data : []);
-        setChallenges(Array.isArray(challengesRes.data) ? challengesRes.data : []);
         setSkills(Array.isArray(skillsRes.data) ? skillsRes.data : []);
       } catch (err) {
         const message = toErrorMessage(err.response?.data?.error || err.response?.data, 'Failed to load dashboard data.');
         console.error('Failed to load dashboard data:', message);
         setLoadError(message);
         setMissions([]);
-        setChallenges([]);
         setSkills([]);
       } finally {
         setLoading(false);
@@ -87,15 +83,6 @@ const Dashboard = ({ user, handleLogout }) => {
 
   const startNewVoiceMission = () => {
     window.location.href = '/debug';
-  };
-
-  const handleStartChallenge = async (id) => {
-    try {
-      const response = await api.post(`/challenges/${id}/start`, { mode: 'GUIDED' });
-      window.location.href = `/debug/${response.data.mission.id}`;
-    } catch (err) {
-      alert('Error starting challenge: ' + err.message);
-    }
   };
 
   // Handles client-side file selection
@@ -237,15 +224,12 @@ const Dashboard = ({ user, handleLogout }) => {
             <a href="/mirror" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
               <Sparkles size={14} /> Mirror AI
             </a>
-            <a href="#challenges" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
-              <Target size={14} /> Challenges
-            </a>
-            <a href="#history" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
+            <a href="/history" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
               <Clock size={14} /> History
             </a>
 
             <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest px-3 mt-6 mb-2 font-bold">System</div>
-            <a href="#settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
+            <a href="/settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded hover:bg-panel-default hover:text-text-primary">
               <span>⚙️</span> Settings
             </a>
           </nav>
@@ -513,41 +497,7 @@ const Dashboard = ({ user, handleLogout }) => {
                   )}
                 </div>
 
-                {/* Challenges listing */}
-                <div id="challenges" className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4 text-left">
-                  <h3 className="text-sm font-bold font-mono text-text-primary uppercase tracking-wider">Recommended Challenges</h3>
-                  
-                  {challenges.length === 0 ? (
-                    <div className="text-center py-8 border border-dashed border-border-default rounded text-xs font-mono text-text-muted">
-                      No challenges recommended yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {challenges.slice(0, 1).map(challenge => (
-                        <div
-                          key={challenge.id}
-                          className="p-3 bg-bg-secondary border border-border-default hover:border-brand-primary rounded space-y-2 transition-colors font-mono text-xs"
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="font-bold text-text-primary truncate pr-2">{challenge.title}</span>
-                            <span className="text-[9px] text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-1.5 py-0.5 rounded uppercase">
-                              {challenge.code_language}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-text-secondary leading-relaxed line-clamp-2">
-                            {challenge.description}
-                          </p>
-                          <button
-                            onClick={() => handleStartChallenge(challenge.id)}
-                            className="w-full py-1 text-center bg-panel-default border border-border-default hover:border-brand-primary text-text-secondary hover:text-brand-primary transition-all text-[10px] font-bold rounded"
-                          >
-                            Accept Challenge
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+
 
               </div>
 

@@ -150,4 +150,22 @@ export class OpenAIProvider extends AIProvider {
     const response = await this.continueDebugSession(context);
     return { ...response, type: response.type === 'final' ? 'patch' : response.type };
   }
+
+  async healthCheck() {
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: 'Reply with the single word pong.' }],
+        max_tokens: 16
+      });
+      const text = response.choices?.[0]?.message?.content;
+      if (text === undefined || text === null) {
+        return { ok: false, provider: this.name, model: this.model };
+      }
+      return { ok: true, provider: this.name, model: this.model };
+    } catch (err) {
+      console.error('OpenAI health check failed:', err);
+      return { ok: false, provider: this.name, model: this.model, reason: err.message };
+    }
+  }
 }
