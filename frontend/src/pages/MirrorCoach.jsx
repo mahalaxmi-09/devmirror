@@ -263,7 +263,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
     const topics = analysisData?.topics || ['General Interview Concepts', 'Placement Communication'];
 
     try {
-      const response = await api.post('/generate-questions', {
+      const response = await api.post('/mirror/generate-questions', {
         topics,
         mode: selectedMode.label,
         difficulty,
@@ -299,7 +299,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
     const currentQuestion = isFollowUpRound ? followUpQuestion : questions[currentIndex]?.text;
 
     try {
-      const response = await api.post('/evaluate-response', {
+      const response = await api.post('/mirror/evaluate-response', {
         question: currentQuestion,
         responseText: currentResponse,
         mode: selectedMode.label,
@@ -348,7 +348,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
     stopVoiceRecording();
 
     try {
-      const response = await api.post('/generate-report', {
+      const response = await api.post('/mirror/generate-report', {
         mode: selectedMode.label,
         dialogs: finalDialogs
       });
