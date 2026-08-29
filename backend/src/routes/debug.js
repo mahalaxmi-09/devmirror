@@ -1,59 +1,109 @@
 import express from 'express';
 import authMiddleware from '../middleware/auth.js';
 import { callAI } from '../services/gemini.js';
+import { getAIProviderName } from '../config/env.js';
 
 const router = express.Router();
 
-// Compatibility route for /api/debug
+// Helper to sanitize code logs (printing a safe preview length)
+const safeCodePreview = (code) => {
+  if (!code) return '';
+  return code.slice(0, 120) + (code.length > 120 ? '...' : '');
+};
+
+// 1. Compatibility route for POST /api/debug
 router.post('/', authMiddleware, async (req, res) => {
-  const { code, language, error, context } = req.body;
+  const { code, language, error, context, prompt: userPrompt } = req.body;
+  
+  // SAFE DEBUG LOGGING
+  console.log('[DEBUG AI] Request received');
+  console.log(`[DEBUG AI] Language: ${language || 'Auto Detect'}`);
+  console.log(`[DEBUG AI] Code received: "${safeCodePreview(code)}"`);
+  console.log(`[DEBUG AI] Provider: ${getAIProviderName()}`);
+
   if (!code) {
     return res.status(400).json({ error: 'Code block is required for debugging.' });
   }
 
+  const promptCtx = userPrompt || context || 'Debug this code.';
+
   try {
-    const systemPrompt = `You are DevMirror AI - a professional autonomous code repair assistant. Your objective is to resolve the user's coding error.`;
-    const prompt = `
+    const systemPrompt = `You are Mirror AI - a professional code repair engine.
+Analyze the user's code, error message, and instructions. Propose a root cause diagnosis and fix.
+Return valid JSON only containing:
+- errorType: string (e.g. ReferenceError, TypeError, SyntaxError, LogicError)
+- errorMessage: string (the exact error message from the log, or brief explanation)
+- rootCause: string (technical root cause)
+- explanation: string (explanation of resolution)
+- correctedCode: string (COMPLETE corrected code block)
+- expectedOutput: string (expected execution output / stdout of corrected code)`;
+
+    const promptText = `
 Programming Language: ${language}
-Original Code:
+Current Code:
 ${code}
 
-Error / Unexpected Behavior:
+Current Error Log:
 ${error || 'No error log provided.'}
 
-Additional Context:
-${context || 'No additional context.'}
+Context/Prompt:
+${promptCtx}
 
-Analyze the problem and return structured JSON only:
-{
-  "success": true,
-  "error": "Summary of the error encountered, or null",
-  "rootCause": "Detailed technical explanation of the root cause",
-  "explanation": "Explanation of how you fixed it",
-  "fixedCode": "The COMPLETE modified code block with the fix applied",
-  "changes": ["List of changes made"],
-  "confidence": 95
-}`;
+Return JSON only.`;
 
-    const responseText = await callAI(systemPrompt, prompt, 'application/json');
+    console.log('[DEBUG AI] AI request started');
+    const responseText = await callAI(systemPrompt, promptText, 'application/json');
+    console.log('[DEBUG AI] AI response received');
+
     let cleaned = responseText.trim();
     if (cleaned.startsWith('```')) {
       cleaned = cleaned.replace(/^```json\s*/, '').replace(/```$/, '').trim();
     }
     const result = JSON.parse(cleaned);
-    res.json(result);
+
+    const analysis = {
+      errorType: result.errorType || 'Error',
+      errorMessage: result.errorMessage || error || 'N/A',
+      rootCause: result.rootCause || 'N/A',
+      explanation: result.explanation || 'N/A',
+      correctedCode: result.correctedCode || code,
+      expectedOutput: result.expectedOutput || 'N/A'
+    };
+
+    const finalResult = {
+      success: true,
+      fixedCode: analysis.correctedCode,
+      correctedCode: analysis.correctedCode,
+      errorType: analysis.errorType,
+      rootCause: analysis.rootCause,
+      explanation: analysis.explanation,
+      verification: 'Execution not verified.',
+      analysis
+    };
+
+    console.log('[DEBUG AI] Response sent');
+    res.json(finalResult);
   } catch (err) {
-    console.error('Stateless debug error:', err);
+    console.error('[DEBUG AI] Stateless debug error:', err);
     res.status(500).json({ error: 'Stateless debugging failed.' });
   }
 });
 
-// New Cloudflare Sandbox-verified code debugging route
+// 2. Cloudflare Sandbox-verified code debugging route (POST /api/debug/run)
 router.post('/run', authMiddleware, async (req, res) => {
-  const { language, code, error, context } = req.body;
+  const { language, code, error, context, prompt: userPrompt } = req.body;
+
+  // SAFE DEBUG LOGGING
+  console.log('[DEBUG AI] Request received');
+  console.log(`[DEBUG AI] Language: ${language || 'Auto Detect'}`);
+  console.log(`[DEBUG AI] Code received: "${safeCodePreview(code)}"`);
+  console.log(`[DEBUG AI] Provider: ${getAIProviderName()}`);
+
   if (!code) {
     return res.status(400).json({ error: 'Code block is required for debugging.' });
   }
+
+  const promptCtx = userPrompt || context || 'Debug this code.';
 
   const lang = (language || '').toLowerCase();
   if (lang !== 'javascript' && lang !== 'js' && lang !== 'node' && lang !== 'python' && lang !== 'py') {
@@ -74,19 +124,19 @@ router.post('/run', authMiddleware, async (req, res) => {
   let executionSuccess = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`Cloudflare Sandbox debug verification attempt ${attempt}/${maxAttempts}...`);
+    console.log(`[DEBUG AI] Cloudflare Sandbox debug verification attempt ${attempt}/${maxAttempts}...`);
 
     const systemPrompt = `You are Mirror AI - a professional code repair engine.
 Analyze the user's code, error message, and context. Propose a root cause diagnosis and fix.
 Return valid JSON only containing:
-- errorType: string (e.g. TypeError, SyntaxError, LogicError)
-- rootCause: string (technical cause)
+- errorType: string (e.g. ReferenceError, TypeError, SyntaxError, LogicError)
+- errorMessage: string (the exact error message from the log, or brief explanation)
+- rootCause: string (technical root cause)
 - explanation: string (explanation of resolution)
 - correctedCode: string (COMPLETE corrected code block)
-- verification: string (brief description of tests that should be run)
-- confidence: number (0 to 100)`;
+- expectedOutput: string (expected execution output / stdout of corrected code)`;
 
-    const prompt = `
+    const promptText = `
 Programming Language: ${language}
 Current Code:
 ${currentCode}
@@ -94,13 +144,16 @@ ${currentCode}
 Current Error Log:
 ${currentError || 'No error log provided.'}
 
-Context:
-${context || 'No additional context.'}
+Context/Prompt:
+${promptCtx}
 
 Return JSON only.`;
 
     try {
-      const aiResponse = await callAI(systemPrompt, prompt, 'application/json');
+      console.log('[DEBUG AI] AI request started');
+      const aiResponse = await callAI(systemPrompt, promptText, 'application/json');
+      console.log('[DEBUG AI] AI response received');
+
       let cleaned = aiResponse.trim();
       if (cleaned.startsWith('```')) {
         cleaned = cleaned.replace(/^```json\s*/, '').replace(/```$/, '').trim();
@@ -175,34 +228,42 @@ ${latestResult.explanation}
 ### ⚠️ Original Error
 ${error || 'No error log provided.'}
 
-### ⚙️ Tests Performed
-${latestResult.verification}
-
-### 📊 Confidence
-${latestResult.confidence}%
+### ⚙️ Expected Output
+${latestResult.expectedOutput}
 `;
 
-  res.json({
+  const analysis = {
+    errorType: latestResult.errorType || 'Error',
+    errorMessage: latestResult.errorMessage || error || 'N/A',
+    rootCause: latestResult.rootCause || 'N/A',
+    explanation: latestResult.explanation || 'N/A',
+    correctedCode: latestResult.correctedCode || code,
+    expectedOutput: latestResult.expectedOutput || 'N/A'
+  };
+
+  const finalResult = {
     success: executionSuccess,
     diagnosis: reportMarkdown.trim(),
     fixedCode: latestResult.correctedCode,
+    correctedCode: latestResult.correctedCode,
+    errorType: latestResult.errorType,
+    rootCause: latestResult.rootCause,
+    explanation: latestResult.explanation,
+    verification: isSandboxAvailable 
+      ? (executionSuccess ? 'VERIFIED_SUCCESS' : 'VERIFIED_FAILED') 
+      : 'Execution not verified.',
+    confidence: latestResult.confidence || 95,
     execution: {
       stdout: executionStdout,
       stderr: executionStderr,
       exitCode: executionExitCode
     },
     testsPassed: executionSuccess,
-    
-    // Exact structured JSON fields requested by the user
-    errorType: latestResult.errorType,
-    rootCause: latestResult.rootCause,
-    explanation: latestResult.explanation,
-    correctedCode: latestResult.correctedCode,
-    verification: isSandboxAvailable 
-      ? (executionSuccess ? 'VERIFIED_SUCCESS' : 'VERIFIED_FAILED') 
-      : 'UNVERIFIED (Sandbox offline)',
-    confidence: latestResult.confidence
-  });
+    analysis
+  };
+
+  console.log('[DEBUG AI] Response sent');
+  res.json(finalResult);
 });
 
 export default router;

@@ -63,12 +63,30 @@ const SkillDebug = () => {
         code: instantCode,
         language: instantLanguage,
         error: instantError,
-        context: instantContext
+        prompt: instantContext
       });
       setInstantResult(response.data);
     } catch (err) {
       console.error(err);
-      setInstantErrorMsg(err.response?.data?.error || err.message || 'An error occurred during debugging.');
+      if (err.code === 'ECONNABORTED') {
+        setInstantErrorMsg('Request timed out. The backend is taking too long to verify the fix — please try again.');
+      } else if (!err.response) {
+        setInstantErrorMsg('Network error. Cannot reach the DevMirror AI backend. Make sure your server is online.');
+      } else {
+        const status = err.response.status;
+        const msg = err.response.data?.error || err.response.data || 'Unknown error';
+        if (status === 400) {
+          setInstantErrorMsg(`Validation Error (400): ${msg}`);
+        } else if (status === 401 || status === 403) {
+          setInstantErrorMsg(`Authentication Error (${status}): Session expired or unauthorized. Please log in again.`);
+        } else if (status === 404) {
+          setInstantErrorMsg('Endpoint Error (404): Debug API endpoint not found. Verify backend routing.');
+        } else if (status === 500) {
+          setInstantErrorMsg(`Backend Server Error (500): ${msg}`);
+        } else {
+          setInstantErrorMsg(`Error (${status}): ${msg}`);
+        }
+      }
     } finally {
       setInstantLoading(false);
     }
@@ -706,13 +724,13 @@ const SkillDebug = () => {
                 {instantResult && (
                   <div className="space-y-6">
                     {/* Status Banner */}
-                    {instantResult.success ? (
+                    {instantResult.verification === 'VERIFIED_SUCCESS' ? (
                       <div className="bg-brand-primary/10 border border-brand-primary/30 text-brand-accent p-4 rounded-xl flex items-start gap-3">
                         <CheckCircle2 size={20} className="shrink-0 mt-0.5 text-brand-primary" />
                         <div>
-                          <h4 className="font-bold text-sm">Verification Succeeded</h4>
+                          <h4 className="font-bold text-sm">✓ AI Analysis Complete</h4>
                           <p className="text-xs text-text-secondary mt-1">
-                            The code was modified and compiled successfully inside the sandbox environment without reporting errors.
+                            The code was executed and verified successfully in sandbox environment.
                           </p>
                         </div>
                       </div>
@@ -720,54 +738,71 @@ const SkillDebug = () => {
                       <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 p-4 rounded-xl flex items-start gap-3">
                         <AlertTriangle size={20} className="shrink-0 mt-0.5" />
                         <div>
-                          <h4 className="font-bold text-sm">Verification Failed / Unverified</h4>
+                          <h4 className="font-bold text-sm">✓ AI Analysis Complete</h4>
                           <p className="text-xs text-text-secondary mt-1">
-                            We generated a patch, but execution failed in the sandbox validation test with error: <b>{instantResult.error || 'Unknown runtime error'}</b>.
+                            Execution not verified.
                           </p>
                         </div>
                       </div>
                     )}
 
-                     {/* Explanations */}
+                    {/* Explanations */}
                     <div className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
-                      {instantResult.diagnosis ? (
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Sandbox Execution Diagnosis</span>
-                          <pre className="text-xs leading-relaxed text-text-secondary whitespace-pre-wrap font-sans mt-2 bg-bg-secondary border border-border-default/40 p-4 rounded-lg select-text">
-                            {instantResult.diagnosis}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono text-red-400 uppercase font-bold tracking-widest flex items-center gap-1">
+                          🔴 Error Detected
+                        </span>
+                        <p className="text-xs font-mono font-bold leading-relaxed text-text-primary">
+                          {instantResult.analysis?.errorType || instantResult.errorType || 'Error'}
+                        </p>
+                      </div>
+
+                      <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                        <span className="text-[10px] font-mono text-yellow-400 uppercase font-bold tracking-widest flex items-center gap-1">
+                          📍 Error Message
+                        </span>
+                        <p className="text-xs font-mono font-semibold leading-relaxed text-text-secondary">
+                          {instantResult.analysis?.errorMessage || instantResult.rootCause || 'N/A'}
+                        </p>
+                      </div>
+
+                      <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                        <span className="text-[10px] font-mono text-brand-primary uppercase font-bold tracking-widest flex items-center gap-1">
+                          🧠 Root Cause
+                        </span>
+                        <p className="text-xs leading-relaxed text-text-primary">
+                          {instantResult.analysis?.rootCause || instantResult.rootCause || 'N/A'}
+                        </p>
+                      </div>
+
+                      <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                        <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest flex items-center gap-1">
+                          💡 Explanation
+                        </span>
+                        <p className="text-xs leading-relaxed text-text-secondary">
+                          {instantResult.analysis?.explanation || instantResult.explanation || 'N/A'}
+                        </p>
+                      </div>
+
+                      {(instantResult.analysis?.expectedOutput || instantResult.expectedOutput) && (
+                        <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                          <span className="text-[10px] font-mono text-brand-primary uppercase font-bold tracking-widest flex items-center gap-1">
+                            ▶ Expected Output
+                          </span>
+                          <pre className="text-xs leading-relaxed text-brand-primary font-mono mt-1 bg-bg-secondary p-3 rounded border border-border-default/40 select-text">
+                            {instantResult.analysis?.expectedOutput || instantResult.expectedOutput}
                           </pre>
                         </div>
-                      ) : (
-                        <>
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Root Cause</span>
-                            <p className="text-xs leading-relaxed text-text-primary">{instantResult.rootCause}</p>
-                          </div>
-                          <div className="border-t border-border-default/50 pt-3.5 space-y-1">
-                            <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Resolution Explanation</span>
-                            <p className="text-xs leading-relaxed text-text-secondary">{instantResult.explanation}</p>
-                          </div>
-                          {instantResult.changes && instantResult.changes.length > 0 && (
-                            <div className="border-t border-border-default/50 pt-3.5 space-y-1">
-                              <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Applied Changes</span>
-                              <ul className="list-disc list-inside text-xs text-text-secondary space-y-1 font-mono">
-                                {instantResult.changes.map((c, i) => (
-                                  <li key={i}>{c}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </>
                       )}
                     </div>
 
                     {/* Fixed Code Blocks */}
                     <div className="bg-[#050705] border border-border-default rounded-xl overflow-hidden">
                       <div className="bg-panel-default px-4 py-2 border-b border-border-default flex justify-between items-center text-xs font-mono select-none">
-                        <span className="text-text-secondary font-bold font-mono">Fixed Code Output</span>
+                        <span className="text-text-secondary font-bold font-mono">🛠 Corrected Code</span>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(instantResult.fixedCode);
+                            navigator.clipboard.writeText(instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode);
                             setCopied(true);
                             setTimeout(() => setCopied(false), 2000);
                           }}
@@ -777,7 +812,7 @@ const SkillDebug = () => {
                         </button>
                       </div>
                       <div className="p-4 overflow-y-auto max-h-[300px] text-left font-mono text-[11px] leading-relaxed text-[#F4F7F2] select-text">
-                        <pre>{instantResult.fixedCode}</pre>
+                        <pre>{instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode}</pre>
                       </div>
                     </div>
                   </div>
