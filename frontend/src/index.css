@@ -299,6 +299,65 @@ input:focus, textarea:focus, select:focus {
     color: #777;
 }
 
+/* Custom Input Icon Wrappers */
+.glowing-login-container .loginBx .input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.glowing-login-container .loginBx .input-wrapper input {
+    padding-left: 38px !important;
+}
+
+.glowing-login-container .loginBx .input-wrapper .input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #555;
+    pointer-events: none;
+    transition: 0.3s;
+}
+
+.glowing-login-container .loginBx .input-wrapper input:focus ~ .input-icon {
+    color: #39FF14;
+    filter: drop-shadow(0 0 2px #39FF14);
+}
+
+/* Custom Neon Checkbox */
+.glowing-login-container .custom-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    border: 1px solid #2d3f2e;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.5);
+    display: inline-grid;
+    place-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+    outline: none;
+}
+
+.glowing-login-container .custom-checkbox:hover {
+    border-color: #39FF14;
+}
+
+.glowing-login-container .custom-checkbox:checked {
+    border-color: #39FF14;
+    background: #39FF14;
+    box-shadow: 0 0 8px #39FF14;
+}
+
+.glowing-login-container .custom-checkbox:checked::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    background: #050705;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
 .glowing-login-container .loginBx button[type="submit"] {
     background: #39FF14 !important;
     border: none !important;

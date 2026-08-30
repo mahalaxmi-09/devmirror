@@ -256,29 +256,35 @@ const Auth = ({ setUser }) => {
 
                   {/* Name (Registration Only) */}
                   {!isSignIn && !isForgotPassword && (
-                    <input
-                      type="text"
-                      name="full_name"
-                      value={formData.full_name}
-                      onChange={handleInputChange}
-                      placeholder="Full Name"
-                      required
-                    />
+                    <div className="input-wrapper">
+                      <input
+                        type="text"
+                        name="full_name"
+                        value={formData.full_name}
+                        onChange={handleInputChange}
+                        placeholder="Full Name"
+                        required
+                      />
+                      <User size={14} className="input-icon" />
+                    </div>
                   )}
 
                   {/* Email */}
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="Email Address"
-                    required
-                  />
+                  <div className="input-wrapper">
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      placeholder="Email Address"
+                      required
+                    />
+                    <Mail size={14} className="input-icon" />
+                  </div>
 
                   {/* Password */}
                   {!isForgotPassword && (
-                    <div className="relative w-full">
+                    <div className="input-wrapper">
                       <input
                         type={showPassword ? 'text' : 'password'}
                         name="password"
@@ -287,10 +293,11 @@ const Auth = ({ setUser }) => {
                         placeholder="Password"
                         required
                       />
+                      <Lock size={14} className="input-icon" />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-muted hover:text-text-secondary"
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-secondary z-10"
                       >
                         {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -299,25 +306,28 @@ const Auth = ({ setUser }) => {
 
                   {/* Confirm Password (Registration Only) */}
                   {!isSignIn && !isForgotPassword && (
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      name="confirmPassword"
-                      value={formData.confirmPassword}
-                      onChange={handleInputChange}
-                      placeholder="Confirm Password"
-                      required
-                    />
+                    <div className="input-wrapper">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="confirmPassword"
+                        value={formData.confirmPassword}
+                        onChange={handleInputChange}
+                        placeholder="Confirm Password"
+                        required
+                      />
+                      <Lock size={14} className="input-icon" />
+                    </div>
                   )}
 
                   {/* Remember Me & Forgot Password (Login Only) */}
                   {isSignIn && !isForgotPassword && (
                     <div className="flex justify-between items-center w-full text-[10px] font-mono px-1">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-text-secondary hover:text-[#39FF14] transition-colors">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-text-secondary hover:text-[#39FF14] transition-colors whitespace-nowrap">
                         <input 
                           type="checkbox" 
                           checked={rememberMe}
                           onChange={(e) => setRememberMe(e.target.checked)}
-                          className="accent-[#39FF14] cursor-pointer"
+                          className="custom-checkbox"
                         />
                         Remember me
                       </label>
@@ -328,7 +338,7 @@ const Auth = ({ setUser }) => {
                           setError('');
                           setSuccess('');
                         }}
-                        className="text-text-muted hover:text-[#39FF14] transition-colors"
+                        className="text-text-muted hover:text-[#39FF14] transition-colors whitespace-nowrap"
                       >
                         Forgot Password?
                       </button>
