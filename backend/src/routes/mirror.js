@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 import authMiddleware from '../middleware/auth.js';
 import { BACKEND_ROOT } from '../config/env.js';
 import { generateStructuredJson } from '../ai/jsonGenerate.js';
@@ -70,7 +70,9 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
 
     if (ext === '.pdf') {
       fileType = 'PDF';
-      const pdfData = await pdf(dataBuffer);
+      const parser = new PDFParse({ data: dataBuffer });
+      const pdfData = await parser.getText();
+      await parser.destroy();
       extractedText = pdfData.text;
     } else {
       fileType = 'Image';
