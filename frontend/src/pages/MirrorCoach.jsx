@@ -836,11 +836,11 @@ const MirrorCoach = ({ user, handleLogout }) => {
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-text-secondary">EMOTION:</span>
+                            <span className="text-text-secondary">FEELING:</span>
                             <span className={`font-bold ${
                               facialTelemetry.emotion === 'FEAR' ? 'text-red-400' : (facialTelemetry.emotion === 'SADNESS' ? 'text-blue-400' : 'text-brand-primary')
                             }`}>
-                              {facialTelemetry.emotion}
+                              {facialTelemetry.emotion === 'NEUTRAL' ? 'CALM' : (facialTelemetry.emotion === 'SADNESS' ? 'SAD' : (facialTelemetry.emotion === 'FEAR' ? 'ANXIOUS' : facialTelemetry.emotion))}
                             </span>
                           </div>
                         </div>
