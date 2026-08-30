@@ -9,18 +9,10 @@ import api from '../utils/api';
 import { toErrorMessage } from '../utils/errorMessage';
 
 const PRACTICE_MODES = [
-  { id: 'mock', label: 'Mock Interview', desc: 'Simulate a real job/placement interview round.', diff: 'Medium', dur: 15, qCount: 5 },
-  { id: 'presentation', label: 'Presentation Practice', desc: 'Present your slides and evaluate clarity & eye-contact.', diff: 'Medium', dur: 10, qCount: 3 },
-  { id: 'viva', label: 'Project Viva', desc: 'Defend your code, databases, and project architecture.', diff: 'Hard', dur: 15, qCount: 5 },
-  { id: 'technical', label: 'Technical Interview', desc: 'Deep dive into data structures, algorithms, & concepts.', diff: 'Hard', dur: 20, qCount: 10 },
-  { id: 'hr', label: 'HR Interview', desc: 'Practice behavioral, motivational, and HR questions.', diff: 'Easy', dur: 10, qCount: 5 },
-  { id: 'resume', label: 'Resume Interview', desc: 'AI extracts resume details and queries your projects.', diff: 'Medium', dur: 15, qCount: 5 },
-  { id: 'study', label: 'Study Material Interview', desc: 'Upload notes/PDFs and practice conceptual definitions.', diff: 'Easy', dur: 15, qCount: 5 },
-  { id: 'rapid', label: 'Rapid Fire', desc: 'Speed check! Fast conceptual queries with short timers.', diff: 'Hard', dur: 5, qCount: 10 },
-  { id: 'stress', label: 'Stress Interview', desc: 'Practice technical pressure, counterexamples, & tough questions.', diff: 'Hard', dur: 15, qCount: 5 },
-  { id: 'communication', label: 'Communication Practice', desc: 'Evaluate clarity, pace, pauses, and filler words.', diff: 'Medium', dur: 10, qCount: 5 },
-  { id: 'placement', label: 'Placement Simulation', desc: 'Full placement round simulation covering mixed areas.', diff: 'Hard', dur: 30, qCount: 15 },
-  { id: 'weakness', label: 'Weakness Practice', desc: 'Focus specifically on topics where you scored lower.', diff: 'Medium', dur: 15, qCount: 5 }
+  { id: 'mock', label: 'Mock Interview', desc: 'Simulate a real job/placement interview round. Practice HR, Technical, or behavioral questions.', diff: 'Medium', dur: 15, qCount: 5 },
+  { id: 'presentation', label: 'Presentation Practice', desc: 'Present slides/notes and evaluate speaking pace, clarity, and gaze.', diff: 'Medium', dur: 10, qCount: 5 },
+  { id: 'viva', label: 'Project Viva', desc: 'Defend your project description, architecture diagram, or code structure.', diff: 'Hard', dur: 15, qCount: 5 },
+  { id: 'weakness', label: 'Weakness Practice', desc: 'Focus specifically on areas flagged for improvement in previous sessions.', diff: 'Medium', dur: 15, qCount: 5 }
 ];
 
 const MirrorCoach = ({ user, handleLogout }) => {
@@ -33,10 +25,13 @@ const MirrorCoach = ({ user, handleLogout }) => {
   const [questionCount, setQuestionCount] = useState(() => Number(localStorage.getItem('setting_question_count') || '5'));
   const [durationLimit, setDurationLimit] = useState(() => Number(localStorage.getItem('setting_duration') || '15'));
   const [followUpEnabled, setFollowUpEnabled] = useState(() => localStorage.getItem('setting_follow_up') !== 'false');
+  const [interviewType, setInterviewType] = useState('Mixed');
 
   // Input states
   const [materialText, setMaterialText] = useState('');
-  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfFile, setPdfFile] = useState(null); // Reference to uploaded PDF or Image
+  const [uploadedFileType, setUploadedFileType] = useState('');
+  const [uploadedFileSize, setUploadedFileSize] = useState(0);
   const [pdfParsing, setPdfParsing] = useState(false);
   const [errorBanner, setErrorBanner] = useState('');
   
@@ -156,16 +151,20 @@ const MirrorCoach = ({ user, handleLogout }) => {
     }
   }, []);
 
-  // PDF Material handler
-  const handlePdfUpload = async (e) => {
+  // File upload handler for PDF & Images
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      setErrorBanner('Only PDF documents are allowed.');
+    
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setErrorBanner('Unsupported file type. Only PDF and JPG/PNG/WebP images are supported.');
       return;
     }
 
     setPdfFile(file);
+    setUploadedFileType(file.type === 'application/pdf' ? 'PDF' : 'Image');
+    setUploadedFileSize(file.size);
     setPdfParsing(true);
     setErrorBanner('');
 
@@ -173,14 +172,16 @@ const MirrorCoach = ({ user, handleLogout }) => {
     formData.append('file', file);
 
     try {
-      const response = await api.post('/mirror/pdf', formData, {
+      const response = await api.post('/mirror/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setMaterialText(response.data.text);
       setStep('prepare');
     } catch (err) {
-      setErrorBanner(toErrorMessage(err.response?.data?.error || err.response?.data || err.message, 'Failed to extract text from PDF.'));
+      setErrorBanner(toErrorMessage(err.response?.data?.error || err.response?.data || err.message, 'Failed to read content from file.'));
       setPdfFile(null);
+      setUploadedFileType('');
+      setUploadedFileSize(0);
     } finally {
       setPdfParsing(false);
     }
@@ -289,9 +290,11 @@ const MirrorCoach = ({ user, handleLogout }) => {
     try {
       const response = await api.post('/mirror/generate-questions', {
         topics,
-        mode: selectedMode.label,
+        mode: selectedMode.id,
         difficulty,
-        questionCount
+        questionCount,
+        interviewType,
+        materialText
       });
 
       setQuestions(response.data.questions || []);
@@ -326,7 +329,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
       const response = await api.post('/mirror/evaluate-response', {
         question: currentQuestion,
         responseText: currentResponse,
-        mode: selectedMode.label,
+        mode: selectedMode.id,
         history: dialogs
       });
 
@@ -334,9 +337,22 @@ const MirrorCoach = ({ user, handleLogout }) => {
         question: currentQuestion,
         answer: currentResponse,
         score: response.data.score || 0,
+        technicalScore: response.data.technicalScore || 0,
+        communicationScore: response.data.communicationScore || 0,
+        relevanceScore: response.data.relevanceScore || 0,
+        completenessScore: response.data.completenessScore || 0,
         feedback: response.data.feedback || '',
+        technicalUnderstanding: response.data.technicalUnderstanding || '',
+        communicationFeedback: response.data.communicationFeedback || '',
+        relevanceFeedback: response.data.relevanceFeedback || '',
+        completenessFeedback: response.data.completenessFeedback || '',
+        didWell: response.data.didWell || '',
+        toImprove: response.data.toImprove || '',
+        betterAnswer: response.data.betterAnswer || '',
         fillerWords: response.data.fillerWords || [],
-        paceIndicator: response.data.paceIndicator || 'Balanced'
+        paceIndicator: response.data.paceIndicator || 'Balanced',
+        confidenceIndicator: response.data.confidenceIndicator || 0,
+        gazeFeedback: response.data.gazeFeedback || ''
       };
 
       setDialogs(prev => [...prev, nextDialog]);
@@ -344,9 +360,22 @@ const MirrorCoach = ({ user, handleLogout }) => {
       // Set the verification for explicit review by the user before moving on
       setCurrentVerification({
         score: response.data.score || 0,
+        technicalScore: response.data.technicalScore || 0,
+        communicationScore: response.data.communicationScore || 0,
+        relevanceScore: response.data.relevanceScore || 0,
+        completenessScore: response.data.completenessScore || 0,
         feedback: response.data.feedback || '',
+        technicalUnderstanding: response.data.technicalUnderstanding || '',
+        communicationFeedback: response.data.communicationFeedback || '',
+        relevanceFeedback: response.data.relevanceFeedback || '',
+        completenessFeedback: response.data.completenessFeedback || '',
+        didWell: response.data.didWell || '',
+        toImprove: response.data.toImprove || '',
+        betterAnswer: response.data.betterAnswer || '',
         fillerWords: response.data.fillerWords || [],
         paceIndicator: response.data.paceIndicator || 'Balanced',
+        confidenceIndicator: response.data.confidenceIndicator || 0,
+        gazeFeedback: response.data.gazeFeedback || '',
         followUpQuestion: response.data.followUpQuestion || ''
       });
     } catch (err) {
@@ -398,7 +427,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
 
     try {
       const response = await api.post('/mirror/generate-report', {
-        mode: selectedMode.label,
+        mode: selectedMode.id,
         dialogs: finalDialogs
       });
 
@@ -610,21 +639,28 @@ const MirrorCoach = ({ user, handleLogout }) => {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
-                  {/* PDF Upload zone */}
+                  {/* Material Upload zone (PDFs and Images) */}
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className="border border-dashed border-border-default hover:border-brand-primary/50 rounded-xl p-8 flex flex-col items-center justify-center bg-bg-secondary/20 cursor-pointer transition-all"
                   >
-                    <input type="file" ref={fileInputRef} onChange={handlePdfUpload} accept=".pdf" className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" />
                     {pdfParsing ? (
                       <Loader2 className="animate-spin text-brand-primary mb-3" size={24} />
                     ) : (
                       <Upload className="text-brand-primary mb-3" size={24} />
                     )}
                     <span className="text-xs font-bold font-mono">
-                      {pdfFile ? pdfFile.name : 'Upload PDF (Resume, Study Notes)'}
+                      {pdfFile ? pdfFile.name : 'Upload PDF or Image (Resume, slides, architecture diagram)'}
                     </span>
-                    <span className="text-[10px] text-text-muted mt-1">PDF Files up to 10MB</span>
+                    <span className="text-[10px] text-text-muted mt-1">PDF & Images (JPG/PNG/WebP) up to 10MB</span>
+                    
+                    {pdfFile && (
+                      <div className="mt-3 p-2 bg-bg-dominant border border-border-default rounded text-[9px] font-mono text-left w-full space-y-1">
+                        <div><span className="text-text-muted uppercase">Type:</span> <span className="text-brand-primary font-bold">{uploadedFileType}</span></div>
+                        <div><span className="text-text-muted uppercase">Size:</span> <span className="text-brand-primary font-bold">{(uploadedFileSize / 1024 / 1024).toFixed(2)} MB</span></div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Paste Content zone */}
@@ -637,7 +673,21 @@ const MirrorCoach = ({ user, handleLogout }) => {
                 </div>
 
                 {/* Configuration details */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-bg-secondary/40 border border-border-default p-4 rounded-xl text-xs font-mono">
+                <div className={`grid ${selectedMode.id === 'mock' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'} gap-4 bg-bg-secondary/40 border border-border-default p-4 rounded-xl text-xs font-mono`}>
+                  {selectedMode.id === 'mock' && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-text-muted uppercase">Interview Type</span>
+                      <select value={interviewType} onChange={(e) => setInterviewType(e.target.value)} className="bg-bg-dominant border border-border-default rounded px-2 py-1">
+                        <option value="Technical">Technical</option>
+                        <option value="HR">HR</option>
+                        <option value="Behavioral">Behavioral</option>
+                        <option value="Coding">Coding</option>
+                        <option value="Project-based">Project-based</option>
+                        <option value="Resume-based">Resume-based</option>
+                        <option value="Mixed">Mixed</option>
+                      </select>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1">
                     <span className="text-[9px] text-text-muted uppercase">Difficulty</span>
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="bg-bg-dominant border border-border-default rounded px-2 py-1">
@@ -910,10 +960,10 @@ const MirrorCoach = ({ user, handleLogout }) => {
 
                   {currentVerification ? (
                     /* Verification Feedback Pane */
-                    <div className="space-y-4 font-mono text-xs flex-1 flex flex-col justify-between">
+                    <div className="space-y-4 font-mono text-xs flex-1 flex flex-col justify-between max-h-[350px] overflow-y-auto pr-1">
                       <div className="space-y-3 bg-bg-secondary border border-brand-primary/20 rounded-lg p-4">
                         <div className="flex justify-between items-center border-b border-border-default/60 pb-2">
-                          <span className="text-text-secondary uppercase font-bold tracking-wider">Answer Verification</span>
+                          <span className="text-text-secondary uppercase font-bold tracking-wider text-[10px]">⭐ Live Scorecard</span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                             currentVerification.score >= 7 ? 'text-[#39FF14] bg-[#39FF14]/5' : (currentVerification.score >= 5 ? 'text-yellow-400 bg-yellow-400/5' : 'text-red-400 bg-red-400/5')
                           }`}>
@@ -921,15 +971,50 @@ const MirrorCoach = ({ user, handleLogout }) => {
                           </span>
                         </div>
                         
+                        {/* Metrics Breakdown Grid */}
+                        <div className="grid grid-cols-2 gap-2 text-[9px] bg-bg-dominant/30 p-2 rounded border border-border-default/40">
+                          <div>🧠 Tech Understanding: <span className="text-[#39FF14] font-bold">{currentVerification.technicalScore}/10</span></div>
+                          <div>💬 Communication: <span className="text-[#39FF14] font-bold">{currentVerification.communicationScore}/10</span></div>
+                          <div>🎯 Relevance: <span className="text-[#39FF14] font-bold">{currentVerification.relevanceScore}/10</span></div>
+                          <div>📚 Completeness: <span className="text-[#39FF14] font-bold">{currentVerification.completenessScore}/10</span></div>
+                        </div>
+
                         <div className="space-y-2 select-text">
                           <p className="text-text-primary leading-relaxed text-[11px]">{currentVerification.feedback}</p>
                           
+                          {/* Did Well / Improve / Suggested templates */}
+                          <div className="space-y-2 pt-2 border-t border-border-default/40 text-[10px] leading-relaxed">
+                            {currentVerification.didWell && (
+                              <div>
+                                <span className="text-[#39FF14] font-bold">✔ What you did well:</span>
+                                <p className="text-text-secondary">{currentVerification.didWell}</p>
+                              </div>
+                            )}
+                            {currentVerification.toImprove && (
+                              <div>
+                                <span className="text-red-400 font-bold">✗ What to improve:</span>
+                                <p className="text-text-secondary">{currentVerification.toImprove}</p>
+                              </div>
+                            )}
+                            {currentVerification.betterAnswer && (
+                              <div className="bg-bg-dominant/40 p-2 rounded border border-border-default/40 mt-1">
+                                <span className="text-[#39FF14] font-bold">💡 Suggested Better Answer:</span>
+                                <p className="text-text-muted mt-0.5 italic select-all">"{currentVerification.betterAnswer}"</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pace, Filler, Gaze, and Confidence indicator details */}
                           <div className="grid grid-cols-2 gap-3 pt-2 text-[9px] text-text-secondary border-t border-border-default/40">
                             <div>
-                              <span className="text-text-muted block uppercase">Pace:</span>
+                              <span className="text-text-muted block uppercase">Pacing:</span>
                               <span className="text-white font-bold">{currentVerification.paceIndicator}</span>
                             </div>
                             <div>
+                              <span className="text-text-muted block uppercase">Confidence:</span>
+                              <span className="text-[#39FF14] font-bold">{currentVerification.confidenceIndicator}%</span>
+                            </div>
+                            <div className="col-span-2">
                               <span className="text-text-muted block uppercase">Filler Words:</span>
                               <span className="text-white font-bold">
                                 {currentVerification.fillerWords.length > 0 
@@ -937,6 +1022,12 @@ const MirrorCoach = ({ user, handleLogout }) => {
                                   : 'None detected! 🎉'}
                               </span>
                             </div>
+                            {currentVerification.gazeFeedback && (
+                              <div className="col-span-2 text-yellow-400/90 font-mono text-[9px]">
+                                <span className="text-text-muted block uppercase">Gaze & Presence:</span>
+                                {currentVerification.gazeFeedback}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1046,26 +1137,34 @@ const MirrorCoach = ({ user, handleLogout }) => {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center font-mono">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center font-mono">
                         <div className="bg-bg-secondary/40 border border-border-default p-4 rounded-xl">
-                          <span className="text-[9px] text-text-muted uppercase">Overall Performance</span>
+                          <span className="text-[9px] text-text-muted uppercase font-bold">Overall Performance</span>
                           <p className="text-2xl font-bold text-brand-primary mt-1">{report.overallScore || 0}%</p>
                         </div>
                         <div className="bg-bg-secondary/40 border border-border-default p-4 rounded-xl">
-                          <span className="text-[9px] text-text-muted uppercase">Communication</span>
+                          <span className="text-[9px] text-text-muted uppercase font-bold">Communication</span>
                           <p className="text-2xl font-bold text-brand-primary mt-1">{report.communicationScore || 0}%</p>
                         </div>
                         <div className="bg-bg-secondary/40 border border-border-default p-4 rounded-xl">
-                          <span className="text-[9px] text-text-muted uppercase">Technical Knowledge</span>
+                          <span className="text-[9px] text-text-muted uppercase font-bold">Technical depth</span>
                           <p className="text-2xl font-bold text-brand-primary mt-1">{report.technicalScore || 0}%</p>
                         </div>
                         <div className="bg-bg-secondary/40 border border-border-default p-4 rounded-xl">
-                          <span className="text-[9px] text-text-muted uppercase">Answer Quality</span>
+                          <span className="text-[9px] text-text-muted uppercase font-bold">Answer Quality</span>
                           <p className="text-2xl font-bold text-brand-primary mt-1">{report.answerQualityScore || 0}%</p>
                         </div>
+                        <div className="bg-bg-secondary/40 border border-[#39FF14]/30 p-4 rounded-xl shadow-green-glow/5">
+                          <span className="text-[9px] text-[#39FF14] uppercase font-bold">Confidence Indicator</span>
+                          <p className="text-2xl font-bold text-[#39FF14] mt-1">{report.confidenceIndicator || 0}%</p>
+                        </div>
+                      </div>
+                      
+                      <div className="text-[10px] text-text-muted font-mono leading-relaxed mt-2 text-center select-none">
+                        ⚠️ **Presentation Confidence Indicator**: calculated from observable speaking and presentation signals during this practice session (pace, pauses, filler words, answer completeness, gaze shifting).
                       </div>
                     </section>
-
+ 
                     {/* Strengths & Improvements */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       
@@ -1081,7 +1180,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
                           ))}
                         </ul>
                       </section>
-
+ 
                       {/* Improvements */}
                       <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-4">
                         <h3 className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider">Areas to Improve</h3>
@@ -1095,20 +1194,23 @@ const MirrorCoach = ({ user, handleLogout }) => {
                         </ul>
                       </section>
                     </div>
-
-                    {/* Responsible nervousness warnings */}
-                    {report.nervousnessIndicators?.length > 0 && (
+ 
+                    {/* Responsible nervousness warnings & gaze indicators */}
+                    {(report.nervousnessIndicators?.length > 0 || report.gazeIndicators?.length > 0) && (
                       <section className="bg-panel-default border border-border-default rounded-xl p-5 space-y-3">
-                        <h3 className="text-xs font-mono font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <ShieldAlert size={14} /> Observable Nervousness Indicators
+                        <h3 className="text-xs font-mono font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5 select-none">
+                          <ShieldAlert size={14} /> Observable Gaze & Presentation Indicators
                         </h3>
-                        <div className="text-xs text-text-secondary space-y-2 font-sans">
-                          <p className="text-text-muted leading-relaxed">
-                            Observable behaviors detected during response analysis that frequently correlate with speaker nervousness. Note: These are observations only, not medical diagnostics:
+                        <div className="text-xs text-text-secondary space-y-3 font-sans">
+                          <p className="text-text-muted leading-relaxed select-none">
+                            Observable behaviors detected during response analysis that frequently correlate with speaking comfort. Note: These are observations only, not medical diagnostics:
                           </p>
                           <ul className="space-y-1.5 list-disc pl-4 font-mono text-[11px] leading-relaxed">
-                            {report.nervousnessIndicators.map((n, idx) => (
+                            {report.nervousnessIndicators?.map((n, idx) => (
                               <li key={idx}>{n}</li>
+                            ))}
+                            {report.gazeIndicators?.map((g, idx) => (
+                              <li key={idx} className="text-yellow-400/90">{g}</li>
                             ))}
                           </ul>
                         </div>

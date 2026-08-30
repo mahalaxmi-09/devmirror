@@ -8,6 +8,7 @@ const pdf = require('pdf-parse');
 import authMiddleware from '../middleware/auth.js';
 import { BACKEND_ROOT } from '../config/env.js';
 import { generateStructuredJson } from '../ai/jsonGenerate.js';
+import { getGeminiClient, getGeminiModel } from '../services/geminiClient.js';
 
 const router = express.Router();
 
@@ -24,32 +25,77 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// PDF extraction route
-router.post('/pdf', authMiddleware, upload.single('file'), async (req, res) => {
+// Vision assistant to extract text, slides, and architectural patterns from diagrams
+async function analyzeImageWithAI(buffer, mimeType) {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error('AI provider is not configured. Please supply a valid GEMINI_API_KEY.');
+  }
+  const base64Image = buffer.toString('base64');
+  
+  const response = await client.models.generateContent({
+    model: getGeminiModel() || 'gemini-2.5-flash',
+    contents: [
+      {
+        inlineData: {
+          mimeType,
+          data: base64Image
+        }
+      },
+      "Extract and explain the content of this image in detail. Describe any diagrams, slides, text labels, codebase architectures, databases, or project outlines displayed so it can be used to generate practice questions."
+    ]
+  });
+
+  return response.text || 'No description could be extracted from this image.';
+}
+
+// Unified file upload route (PDFs and Images)
+router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
   const file = req.file;
   if (!file) {
-    return res.status(400).json({ error: 'No PDF file uploaded.' });
+    return res.status(400).json({ error: 'No file was uploaded.' });
   }
+
   const ext = path.extname(file.originalname).toLowerCase();
-  if (ext !== '.pdf') {
+  const allowedExts = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+  if (!allowedExts.includes(ext)) {
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    return res.status(400).json({ error: 'Only PDF files are allowed.' });
+    return res.status(400).json({ error: 'Unsupported file type. Please upload a PDF document or a JPG/PNG/WebP image.' });
   }
 
   try {
     const dataBuffer = fs.readFileSync(file.path);
-    const pdfData = await pdf(dataBuffer);
-    fs.unlinkSync(file.path);
+    let extractedText = '';
+    let fileType = '';
+
+    if (ext === '.pdf') {
+      fileType = 'PDF';
+      const pdfData = await pdf(dataBuffer);
+      extractedText = pdfData.text;
+    } else {
+      fileType = 'Image';
+      const mimeType = ext === '.png' ? 'image/png' : (ext === '.webp' ? 'image/webp' : 'image/jpeg');
+      try {
+        extractedText = await analyzeImageWithAI(dataBuffer, mimeType);
+      } catch (err) {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        return res.status(503).json({ error: 'AI vision extraction is temporarily unavailable: ' + err.message });
+      }
+    }
+
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
     res.json({
       success: true,
-      text: pdfData.text,
-      pages: pdfData.numpages || 1
+      text: extractedText,
+      fileType,
+      fileName: file.originalname,
+      fileSize: file.size
     });
   } catch (err) {
-    console.error('PDF parser error:', err);
+    console.error('File upload/extraction error:', err);
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    res.status(500).json({ error: 'Failed to parse PDF document.' });
+    res.status(500).json({ error: 'Unable to read or extract content from this file.' });
   }
 });
 
@@ -85,20 +131,25 @@ Return structured JSON only, containing these fields:
 
 // 2. Generate custom interview questions
 router.post('/generate-questions', authMiddleware, async (req, res) => {
-  const { topics = [], mode, difficulty = 'medium', questionCount = 5 } = req.body || {};
+  const { topics = [], mode, difficulty = 'medium', questionCount = 5, interviewType = 'Mixed', materialText = '' } = req.body || {};
 
-  const systemInstruction = `You are Mirror AI Interviewer.
-Generate professional interview questions based on the listed topics, technologies, difficulty, and selected practice mode.
-Ensure questions are specific, realistic, and match the target practice mode style (e.g. mock interview, project viva, study materials, rapid fire, stress).
+  let systemInstruction = `You are Mirror AI Coach.
+Generate professional practice questions based on the listed topics, difficulty, and selected practice mode.
+Ensure questions are highly specific, realistic, and ground them in the provided Context Material. Do not generate generic random questions.
 Return structured JSON only, containing exactly:
 - questions: array of objects with fields:
   - id: number
   - text: string`;
 
-  const prompt = `Topics: ${JSON.stringify(topics)}
-Mode: ${mode}
-Difficulty: ${difficulty}
-Question Count limit: ${questionCount}`;
+  if (mode === 'mock') {
+    systemInstruction += `\nPractice Mode is Mock Interview (Type: ${interviewType}). Act as a real professional interviewer. Ask specific questions targeted at assessing depth in ${difficulty} concepts.`;
+  } else if (mode === 'presentation') {
+    systemInstruction += `\nPractice Mode is Presentation Practice. Act as a presentation auditor. Ask the user to explain specific sections, slides, diagrams, or content details from their material.`;
+  } else if (mode === 'viva') {
+    systemInstruction += `\nPractice Mode is Project Viva. Act as an academic external examiner. Ask the candidate to defend their project overview, problem statement, architecture, technology stack, implementation, database, APIs, security, testing, deployment, challenges, and technical decisions.`;
+  }
+
+  const prompt = `Context Material:\n${materialText.slice(0, 4000)}\n\nTopics: ${JSON.stringify(topics)}\nDifficulty: ${difficulty}\nQuestion Count limit: ${questionCount}`;
 
   try {
     const result = await generateStructuredJson(prompt, systemInstruction);
@@ -120,19 +171,27 @@ router.post('/evaluate-response', authMiddleware, async (req, res) => {
   }
 
   const systemInstruction = `You are Mirror AI Evaluator.
-Analyze the user's answer to the given question.
+Analyze the user's answer to the given question and generate high-fidelity practice metrics.
 Assess answer quality, technical accuracy, vocabulary clarity, and detect filler words (e.g., um, uh, like, actually, basically, you know).
-Provide a score between 1 and 10.
-Decide if an adaptive follow-up question is appropriate:
-- If response is strong: ask a deeper question extending the topic.
-- If response is weak: ask a clarifying foundational question.
-- If response is excellent: raise difficulty.
 Return structured JSON only, containing:
 - score: number (1 to 10)
-- feedback: string (brief explanation of score)
-- followUpQuestion: string (adaptive follow-up question, or empty if proceeding to next prompt)
-- fillerWords: string[] (detected filler words)
-- paceIndicator: string (speaking speed/pace explanation)`;
+- technicalScore: number (1 to 10)
+- communicationScore: number (1 to 10)
+- relevanceScore: number (1 to 10)
+- completenessScore: number (1 to 10)
+- feedback: string (general feedback summary)
+- technicalUnderstanding: string (brief assessment of tech concepts)
+- communicationFeedback: string (brief assessment of speaking clarity)
+- relevanceFeedback: string (brief assessment of answer relevance)
+- completenessFeedback: string (brief assessment of how thorough the answer was)
+- didWell: string (what user did well)
+- toImprove: string (what user should improve)
+- betterAnswer: string (suggested model answer guide)
+- followUpQuestion: string (contextual adaptive follow-up question, or empty if none)
+- fillerWords: string[] (detected filler words from the answer text)
+- paceIndicator: string (speaking pace explanation)
+- confidenceIndicator: number (1 to 100, Presentation Confidence Indicator calculated from pace, filler words, answer length, completeness)
+- gazeFeedback: string (eye contact recommendation, e.g. "Consider maintaining more consistent eye contact with the camera.")`;
 
   const prompt = `Current Question: ${question}
 User Answer: ${responseText}
@@ -162,15 +221,17 @@ router.post('/generate-report', authMiddleware, async (req, res) => {
 Summarize the full practice dialogue history. Calculate scores and metrics.
 Identify core strengths and specific technical areas to improve.
 Provide a question-by-question review outlining score, feedback, better answer templates, and recommended follow-up study points.
-Identify potential nervousness indicators based on observable signals (filler words, speaking rate, pauses) without making a medical diagnosis.
+Identify potential nervousness indicators based on observable signals (filler words, speaking rate, pauses) without making a medical or psychological diagnosis.
 Return structured JSON only, containing:
 - overallScore: number (1 to 100)
 - communicationScore: number (1 to 100)
 - technicalScore: number (1 to 100)
 - answerQualityScore: number (1 to 100)
+- confidenceIndicator: number (1 to 100, Presentation Confidence Indicator summarizing speaking and camera behaviors)
 - strengths: string[]
 - improvements: string[]
 - nervousnessIndicators: string[]
+- gazeIndicators: string[] (observable gaze and camera presence recommendations, e.g. "Avoid looking away from the camera frequently")
 - questionReviews: array of objects with fields:
   - question: string
   - answer: string
