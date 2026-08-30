@@ -18,9 +18,22 @@ const Auth = ({ setUser }) => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [backendOk, setBackendOk] = useState(null);
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     checkBackendHealth(20000).then(setBackendOk);
+
+    // Auto-populate remembered user credentials
+    const savedEmail = localStorage.getItem('remember_email');
+    const savedPassword = localStorage.getItem('remember_password');
+    if (savedEmail && savedPassword) {
+      setFormData(prev => ({
+        ...prev,
+        email: savedEmail,
+        password: savedPassword
+      }));
+      setRememberMe(true);
+    }
   }, []);
 
   const toggleMode = () => {
@@ -91,6 +104,16 @@ const Auth = ({ setUser }) => {
       // Save details
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+
+      if (isSignIn) {
+        if (rememberMe) {
+          localStorage.setItem('remember_email', formData.email);
+          localStorage.setItem('remember_password', formData.password);
+        } else {
+          localStorage.removeItem('remember_email');
+          localStorage.removeItem('remember_password');
+        }
+      }
       
       setTimeout(() => {
         setUser(response.data.user);
@@ -292,6 +315,8 @@ const Auth = ({ setUser }) => {
                       <label className="flex items-center gap-1.5 cursor-pointer text-text-secondary hover:text-[#39FF14] transition-colors">
                         <input 
                           type="checkbox" 
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
                           className="accent-[#39FF14] cursor-pointer"
                         />
                         Remember me
