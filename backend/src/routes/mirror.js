@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { PDFParse } from 'pdf-parse';
+import pdf from 'pdf-parse';
 import authMiddleware from '../middleware/auth.js';
 import { BACKEND_ROOT } from '../config/env.js';
 import { generateStructuredJson } from '../ai/jsonGenerate.js';
@@ -36,15 +36,13 @@ router.post('/pdf', authMiddleware, upload.single('file'), async (req, res) => {
 
   try {
     const dataBuffer = fs.readFileSync(file.path);
-    const parser = new PDFParse({ data: dataBuffer });
-    const pdfData = await parser.getText();
-    await parser.destroy();
+    const pdfData = await pdf(dataBuffer);
     fs.unlinkSync(file.path);
 
     res.json({
       success: true,
       text: pdfData.text,
-      pages: pdfData.total || 1
+      pages: pdfData.numpages || 1
     });
   } catch (err) {
     console.error('PDF parser error:', err);
@@ -76,6 +74,9 @@ Return structured JSON only, containing these fields:
     res.json(result);
   } catch (err) {
     console.error('Material analyzer error:', err);
+    if (err.code === 'AI_SERVICE_UNAVAILABLE') {
+      return res.status(503).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to analyze preparation material.' });
   }
 });
@@ -102,6 +103,9 @@ Question Count limit: ${questionCount}`;
     res.json(result);
   } catch (err) {
     console.error('Question generator error:', err);
+    if (err.code === 'AI_SERVICE_UNAVAILABLE') {
+      return res.status(503).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to generate practice questions.' });
   }
 });
@@ -138,6 +142,9 @@ Past Dialogs: ${JSON.stringify(history)}`;
     res.json(result);
   } catch (err) {
     console.error('Response evaluator error:', err);
+    if (err.code === 'AI_SERVICE_UNAVAILABLE') {
+      return res.status(503).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to evaluate response.' });
   }
 });
@@ -178,6 +185,9 @@ Dialogs: ${JSON.stringify(dialogs)}`;
     res.json(result);
   } catch (err) {
     console.error('Report generator error:', err);
+    if (err.code === 'AI_SERVICE_UNAVAILABLE') {
+      return res.status(503).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to generate performance report.' });
   }
 });
