@@ -56,6 +56,7 @@ const MirrorCoach = ({ user, handleLogout }) => {
   const [secondsRemaining, setSecondsRemaining] = useState(900);
   const [activeTimer, setActiveTimer] = useState(null);
   const [backendHealth, setBackendHealth] = useState({ status: 'checking', ai: false, database: false });
+  const [currentVerification, setCurrentVerification] = useState(null);
 
   // Camera preview states
   const [cameraActive, setCameraActive] = useState(false);
@@ -216,6 +217,11 @@ const MirrorCoach = ({ user, handleLogout }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      // Automatically activate microphone when camera is opened
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        startVoiceRecording();
+      }
     } catch (err) {
       setCameraActive(false);
       setStreamError('Camera permission was denied. Please allow camera access in your browser.');
@@ -228,6 +234,8 @@ const MirrorCoach = ({ user, handleLogout }) => {
     }
     setCameraActive(false);
     streamRef.current = null;
+    // Automatically deactivate microphone when camera is closed
+    stopVoiceRecording();
   };
 
   // Microphone recording transcribers
@@ -332,27 +340,52 @@ const MirrorCoach = ({ user, handleLogout }) => {
       };
 
       setDialogs(prev => [...prev, nextDialog]);
-      setCurrentResponse('');
 
-      // Check if follow-up is recommended and enabled
-      if (followUpEnabled && response.data.followUpQuestion && !isFollowUpRound) {
-        setIsFollowUpRound(true);
-        setFollowUpQuestion(response.data.followUpQuestion);
-      } else {
-        // Move to the next conceptual question
-        setIsFollowUpRound(false);
-        setFollowUpQuestion('');
-        if (currentIndex < questions.length - 1) {
-          setCurrentIndex(prev => prev + 1);
-        } else {
-          // Completed all questions, generate final performance report
-          await handleEndInterview([...dialogs, nextDialog]);
-        }
-      }
+      // Set the verification for explicit review by the user before moving on
+      setCurrentVerification({
+        score: response.data.score || 0,
+        feedback: response.data.feedback || '',
+        fillerWords: response.data.fillerWords || [],
+        paceIndicator: response.data.paceIndicator || 'Balanced',
+        followUpQuestion: response.data.followUpQuestion || ''
+      });
     } catch (err) {
       setErrorBanner(toErrorMessage(err.response?.data?.error || err.response?.data || err.message, 'Failed to evaluate response.'));
     } finally {
       setEvaluating(false);
+    }
+  };
+
+  // Move to next question after verification review
+  const handleProceedToNextQuestion = async () => {
+    if (!currentVerification) return;
+    
+    const { followUpQuestion } = currentVerification;
+    setCurrentVerification(null);
+    setCurrentResponse('');
+
+    // Re-enable microphone automatically if camera is active
+    if (cameraActive) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        startVoiceRecording();
+      }
+    }
+
+    // Check if follow-up is recommended and enabled
+    if (followUpEnabled && followUpQuestion && !isFollowUpRound) {
+      setIsFollowUpRound(true);
+      setFollowUpQuestion(followUpQuestion);
+    } else {
+      // Move to the next conceptual question
+      setIsFollowUpRound(false);
+      setFollowUpQuestion('');
+      if (currentIndex < questions.length - 1) {
+        setCurrentIndex(prev => prev + 1);
+      } else {
+        // Completed all questions, generate final performance report
+        await handleEndInterview();
+      }
     }
   };
 
@@ -805,6 +838,22 @@ const MirrorCoach = ({ user, handleLogout }) => {
                       <>
                         <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                         
+                        {/* Start / Stop speaking indicator button overlay */}
+                        <div className="absolute top-3 left-3 flex items-center gap-2 select-none z-20">
+                          <button
+                            type="button"
+                            onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                            className={`px-3 py-1.5 border rounded-full text-[9px] font-bold uppercase transition-all flex items-center gap-1.5 shadow-md ${
+                              isRecording 
+                                ? 'bg-red-500/90 border-red-400 text-white animate-pulse' 
+                                : 'bg-black/85 border-white/20 text-white hover:border-[#39FF14] hover:text-[#39FF14]'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isRecording ? 'bg-white animate-ping' : 'bg-red-500'}`} />
+                            {isRecording ? 'STOP SPEAKING (END)' : 'START SPEAKING (START)'}
+                          </button>
+                        </div>
+
                         {/* Laser Scanning Indicator */}
                         <div 
                           className="absolute inset-0 bg-gradient-to-b from-transparent via-[#39FF14]/15 to-transparent pointer-events-none" 
@@ -859,58 +908,113 @@ const MirrorCoach = ({ user, handleLogout }) => {
                     </div>
                   </div>
 
-                  {/* Response Text area (Fallback/Microphone text holder) */}
-                  <div className="space-y-2">
-                    <label htmlFor="user-response" className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Your Response</label>
-                    <textarea
-                      id="user-response"
-                      value={currentResponse}
-                      onChange={(e) => setCurrentResponse(e.target.value)}
-                      className="w-full bg-bg-secondary border border-border-default rounded-lg p-3 text-xs focus:outline-none min-h-[90px]"
-                      placeholder="Type your response here or use microphone dictation..."
-                    />
-                  </div>
+                  {currentVerification ? (
+                    /* Verification Feedback Pane */
+                    <div className="space-y-4 font-mono text-xs flex-1 flex flex-col justify-between">
+                      <div className="space-y-3 bg-bg-secondary border border-brand-primary/20 rounded-lg p-4">
+                        <div className="flex justify-between items-center border-b border-border-default/60 pb-2">
+                          <span className="text-text-secondary uppercase font-bold tracking-wider">Answer Verification</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            currentVerification.score >= 7 ? 'text-[#39FF14] bg-[#39FF14]/5' : (currentVerification.score >= 5 ? 'text-yellow-400 bg-yellow-400/5' : 'text-red-400 bg-red-400/5')
+                          }`}>
+                            SCORE: {currentVerification.score}/10
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2 select-text">
+                          <p className="text-text-primary leading-relaxed text-[11px]">{currentVerification.feedback}</p>
+                          
+                          <div className="grid grid-cols-2 gap-3 pt-2 text-[9px] text-text-secondary border-t border-border-default/40">
+                            <div>
+                              <span className="text-text-muted block uppercase">Pace:</span>
+                              <span className="text-white font-bold">{currentVerification.paceIndicator}</span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block uppercase">Filler Words:</span>
+                              <span className="text-white font-bold">
+                                {currentVerification.fillerWords.length > 0 
+                                  ? currentVerification.fillerWords.join(', ') 
+                                  : 'None detected! 🎉'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-                  {/* Operational controls footer */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border-default/60 select-none font-mono">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
-                        className={`px-3 py-1.5 border rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${
-                          isRecording ? 'border-red-500 text-red-400 bg-red-500/5' : 'border-border-default hover:border-brand-primary'
-                        }`}
-                      >
-                        <Mic size={12} /> {isRecording ? 'Stop' : 'Voice'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cameraActive ? stopCamera : startCamera}
-                        className="px-3 py-1.5 border border-border-default hover:border-brand-primary rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1"
-                      >
-                        <Video size={12} /> Camera
-                      </button>
+                      <div className="flex justify-end pt-3 border-t border-border-default/60">
+                        <button
+                          type="button"
+                          onClick={handleProceedToNextQuestion}
+                          className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-5 py-2.5 rounded font-bold text-[10px] uppercase tracking-wider shadow-green-glow"
+                        >
+                          Next Question ➜
+                        </button>
+                      </div>
                     </div>
+                  ) : (
+                    /* Normal response and submit controls */
+                    <>
+                      {/* Response Text area (Fallback/Microphone text holder) */}
+                      <div className="space-y-2">
+                        <label htmlFor="user-response" className="text-[10px] font-mono text-text-muted uppercase tracking-wider block">Your Response</label>
+                        <textarea
+                          id="user-response"
+                          value={currentResponse}
+                          onChange={(e) => setCurrentResponse(e.target.value)}
+                          readOnly={cameraActive}
+                          className={`w-full border border-border-default rounded-lg p-3 text-xs focus:outline-none min-h-[90px] ${
+                            cameraActive ? 'bg-bg-secondary/60 text-text-muted cursor-not-allowed border-dashed' : 'bg-bg-secondary'
+                          }`}
+                          placeholder={
+                            cameraActive 
+                              ? "Keyboard input disabled in Video mode. Speak to answer..." 
+                              : "Type your response here or use microphone dictation..."
+                          }
+                        />
+                      </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-text-secondary font-mono">{formattedTime()}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleEndInterview()}
-                        className="px-3.5 py-1.5 border border-red-500/30 text-red-400 bg-red-950/5 hover:border-red-500 hover:bg-red-950/20 rounded text-[10px] font-bold uppercase"
-                      >
-                        End Viva
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSubmitAnswer}
-                        disabled={evaluating || !currentResponse.trim()}
-                        className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-4 py-1.5 rounded font-bold text-[10px] uppercase tracking-wider disabled:opacity-40"
-                      >
-                        Submit Response
-                      </button>
-                    </div>
-                  </div>
+                      {/* Operational controls footer */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border-default/60 select-none font-mono">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={isRecording ? stopVoiceRecording : startVoiceRecording}
+                            className={`px-3 py-1.5 border rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${
+                              isRecording ? 'border-red-500 text-red-400 bg-red-500/5' : 'border-border-default hover:border-brand-primary'
+                            }`}
+                          >
+                            <Mic size={12} /> {isRecording ? 'Stop' : 'Voice'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cameraActive ? stopCamera : startCamera}
+                            className="px-3 py-1.5 border border-border-default hover:border-brand-primary rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1"
+                          >
+                            <Video size={12} /> Camera
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-text-secondary font-mono">{formattedTime()}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleEndInterview()}
+                            className="px-3.5 py-1.5 border border-red-500/30 text-red-400 bg-red-950/5 hover:border-red-500 hover:bg-red-950/20 rounded text-[10px] font-bold uppercase"
+                          >
+                            End Viva
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSubmitAnswer}
+                            disabled={evaluating || !currentResponse.trim()}
+                            className="bg-brand-primary text-bg-dominant hover:bg-brand-accent px-4 py-1.5 rounded font-bold text-[10px] uppercase tracking-wider disabled:opacity-40"
+                          >
+                            Submit Response
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </section>
               </div>
 
