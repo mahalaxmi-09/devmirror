@@ -158,12 +158,12 @@ input:focus, textarea:focus, select:focus {
             transparent 40%,
             #1b990b 50%);
     filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
-    animation: rotating 4s linear infinite;
+    animation: rotating 6s linear infinite; /* Graceful slow spin */
     border-radius: 20px;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+    transition: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glowing-login-container .box:hover {
@@ -175,6 +175,7 @@ input:focus, textarea:focus, select:focus {
             transparent 5%,
             transparent 40%,
             #39FF14 50%);
+    filter: drop-shadow(0 0 25px rgba(57, 255, 20, 0.15)) drop-shadow(0 15px 35px rgba(0,0,0,0.9));
 }
 
 @keyframes rotating {
@@ -199,9 +200,9 @@ input:focus, textarea:focus, select:focus {
             #1b990b 50%);
     filter: drop-shadow(0 10px 30px rgba(0,0,0,0.8));
     border-radius: 20px;
-    animation: rotating 4s linear infinite;
-    animation-delay: -1s;
-    transition: 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+    animation: rotating 6s linear infinite;
+    animation-delay: -1.5s;
+    transition: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glowing-login-container .box:hover::before {
@@ -217,9 +218,9 @@ input:focus, textarea:focus, select:focus {
     content: "";
     position: absolute;
     inset: 4px;
-    background: #090D09;
+    background: #060806;
     border-radius: 15px;
-    border: 6px solid #050705;
+    border: 6px solid #040504;
 }
 
 .glowing-login-container .login-card {
@@ -230,14 +231,16 @@ input:focus, textarea:focus, select:focus {
     align-items: center;
     border-radius: 10px;
     flex-direction: column;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(5, 7, 5, 0.6);
+    backdrop-filter: blur(12px); /* High-tech glassy backdrop blur */
+    -webkit-backdrop-filter: blur(12px);
     z-index: 10;
-    box-shadow: inset 0 10px 20px rgba(0, 0, 0, 0.6);
-    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
-    transition: 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+    box-shadow: inset 0 8px 32px rgba(0, 0, 0, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
     color: #fff;
     overflow: hidden;
-    padding-top: 20px;
+    padding-top: 22px;
 }
 
 .glowing-login-container .box:hover .login-card {
@@ -255,7 +258,7 @@ input:focus, textarea:focus, select:focus {
     transform: translateY(126px); /* Hidden by default */
     opacity: 0;
     pointer-events: none;
-    transition: 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+    transition: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glowing-login-container .box:hover .loginBx {
@@ -285,18 +288,25 @@ input:focus, textarea:focus, select:focus {
     outline: none;
     font-size: 0.8em;
     color: #fff !important;
-    background: rgba(0, 0, 0, 0.45) !important;
-    border: 1px solid #1C261D !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    border: 1px solid #1a241b !important;
     border-radius: 30px !important;
+    transition: all 0.3s ease;
 }
 
 .glowing-login-container .loginBx input:focus {
     border-color: #39FF14 !important;
-    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3) !important;
+    background: rgba(0, 0, 0, 0.75) !important;
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.25) !important;
 }
 
 .glowing-login-container .loginBx input::placeholder {
-    color: #777;
+    color: #555;
+    transition: color 0.3s ease;
+}
+
+.glowing-login-container .loginBx input:focus::placeholder {
+    color: #888;
 }
 
 /* Custom Input Icon Wrappers */
@@ -316,12 +326,12 @@ input:focus, textarea:focus, select:focus {
     transform: translateY(-50%);
     color: #555;
     pointer-events: none;
-    transition: 0.3s;
+    transition: all 0.3s ease;
 }
 
 .glowing-login-container .loginBx .input-wrapper input:focus ~ .input-icon {
     color: #39FF14;
-    filter: drop-shadow(0 0 2px #39FF14);
+    filter: drop-shadow(0 0 3px rgba(57, 255, 20, 0.8));
 }
 
 /* Custom Neon Checkbox */
@@ -336,7 +346,7 @@ input:focus, textarea:focus, select:focus {
     display: inline-grid;
     place-content: center;
     cursor: pointer;
-    transition: 0.2s;
+    transition: all 0.2s ease;
     outline: none;
 }
 
@@ -347,7 +357,7 @@ input:focus, textarea:focus, select:focus {
 .glowing-login-container .custom-checkbox:checked {
     border-color: #39FF14;
     background: #39FF14;
-    box-shadow: 0 0 8px #39FF14;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
 }
 
 .glowing-login-container .custom-checkbox:checked::before {
@@ -364,7 +374,7 @@ input:focus, textarea:focus, select:focus {
     font-weight: 700;
     color: #050705 !important;
     cursor: pointer;
-    transition: 0.5s;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     border-radius: 30px !important;
     font-size: 0.8em;
     padding: 10px 20px;
@@ -373,7 +383,12 @@ input:focus, textarea:focus, select:focus {
 }
 
 .glowing-login-container .loginBx button[type="submit"]:hover {
-    box-shadow: 0 0 10px #39FF14, 0 0 35px #39FF14 !important;
+    transform: translateY(-1px); /* Slight raise on hover */
+    box-shadow: 0 0 15px #39FF14, 0 0 35px rgba(57, 255, 20, 0.6) !important;
+}
+
+.glowing-login-container .loginBx button[type="submit"]:active {
+    transform: translateY(0);
 }
 
 @keyframes scanline {
