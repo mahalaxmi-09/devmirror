@@ -141,12 +141,13 @@ Return structured JSON only, containing exactly:
   - id: number
   - text: string`;
 
-  if (mode === 'mock') {
-    systemInstruction += `\nPractice Mode is Mock Interview (Type: ${interviewType}). Act as a real professional interviewer. Ask specific questions targeted at assessing depth in ${difficulty} concepts.`;
-  } else if (mode === 'presentation') {
-    systemInstruction += `\nPractice Mode is Presentation Practice. Act as a presentation auditor. Ask the user to explain specific sections, slides, diagrams, or content details from their material.`;
-  } else if (mode === 'viva') {
+  if (mode === 'viva') {
     systemInstruction += `\nPractice Mode is Project Viva. Act as an academic external examiner. Ask the candidate to defend their project overview, problem statement, architecture, technology stack, implementation, database, APIs, security, testing, deployment, challenges, and technical decisions.`;
+  } else if (mode === 'presentation' || mode === 'communication') {
+    systemInstruction += `\nPractice Mode is Presentation Practice / Communication Practice. Act as a presentation auditor and speech coach. Ask the user to explain specific sections, slides, diagrams, or content details from their material.`;
+  } else {
+    const type = interviewType || mode || 'Mixed';
+    systemInstruction += `\nPractice Mode is Mock Interview (Type: ${type}). Act as a real professional interviewer. Ask specific questions targeted at assessing depth in ${difficulty} concepts.`;
   }
 
   const prompt = `Context Material:\n${materialText.slice(0, 4000)}\n\nTopics: ${JSON.stringify(topics)}\nDifficulty: ${difficulty}\nQuestion Count limit: ${questionCount}`;

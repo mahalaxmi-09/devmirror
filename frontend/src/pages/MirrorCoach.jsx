@@ -9,9 +9,17 @@ import api from '../utils/api';
 import { toErrorMessage } from '../utils/errorMessage';
 
 const PRACTICE_MODES = [
-  { id: 'mock', label: 'Mock Interview', desc: 'Simulate a real job/placement interview round. Practice HR, Technical, or behavioral questions.', diff: 'Medium', dur: 15, qCount: 5 },
+  { id: 'mock', label: 'Mock Interview', desc: 'Simulate a real job/placement interview round.', diff: 'Medium', dur: 15, qCount: 5 },
   { id: 'presentation', label: 'Presentation Practice', desc: 'Present slides/notes and evaluate speaking pace, clarity, and gaze.', diff: 'Medium', dur: 10, qCount: 5 },
   { id: 'viva', label: 'Project Viva', desc: 'Defend your project description, architecture diagram, or code structure.', diff: 'Hard', dur: 15, qCount: 5 },
+  { id: 'technical', label: 'Technical Interview', desc: 'Deep dive into data structures, algorithms, & concepts.', diff: 'Hard', dur: 20, qCount: 10 },
+  { id: 'hr', label: 'HR Interview', desc: 'Practice behavioral, motivational, and HR questions.', diff: 'Easy', dur: 10, qCount: 5 },
+  { id: 'resume', label: 'Resume Interview', desc: 'AI extracts resume details and queries your projects.', diff: 'Medium', dur: 15, qCount: 5 },
+  { id: 'study', label: 'Study Material Interview', desc: 'Upload notes/PDFs and practice conceptual definitions.', diff: 'Easy', dur: 15, qCount: 5 },
+  { id: 'rapid', label: 'Rapid Fire', desc: 'Speed check! Fast conceptual queries with short timers.', diff: 'Hard', dur: 5, qCount: 10 },
+  { id: 'stress', label: 'Stress Interview', desc: 'Practice technical pressure, counterexamples, & tough questions.', diff: 'Hard', dur: 15, qCount: 5 },
+  { id: 'communication', label: 'Communication Practice', desc: 'Evaluate clarity, pace, pauses, and filler words.', diff: 'Medium', dur: 10, qCount: 5 },
+  { id: 'placement', label: 'Placement Simulation', desc: 'Full placement round simulation covering mixed areas.', diff: 'Hard', dur: 30, qCount: 15 },
   { id: 'weakness', label: 'Weakness Practice', desc: 'Focus specifically on areas flagged for improvement in previous sessions.', diff: 'Medium', dur: 15, qCount: 5 }
 ];
 
