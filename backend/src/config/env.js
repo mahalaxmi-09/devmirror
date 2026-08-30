@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const BACKEND_ROOT = path.resolve(__dirname, '../..');
 
-dotenv.config({ path: path.join(BACKEND_ROOT, '.env') });
+dotenv.config({ path: path.join(BACKEND_ROOT, '.env'), override: true });
 
 const PLACEHOLDER_KEYS = new Set([
   '',

@@ -37,6 +37,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '8mb' }));
 
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.path}`);
+  next();
+});
+
 const uploadsDir = path.join(BACKEND_ROOT, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
