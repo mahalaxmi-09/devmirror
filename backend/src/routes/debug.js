@@ -11,37 +11,33 @@ const safeCodePreview = (code) => {
   return code.slice(0, 120) + (code.length > 120 ? '...' : '');
 };
 
-// 1. Compatibility route for POST /api/debug
-router.post('/', authMiddleware, async (req, res) => {
-  const { code, language, error, context, prompt: userPrompt } = req.body;
-  
-  // SAFE DEBUG LOGGING
-  console.log('[DEBUG AI] Request received');
-  console.log(`[DEBUG AI] Language: ${language || 'Auto Detect'}`);
-  console.log(`[DEBUG AI] Code received: "${safeCodePreview(code)}"`);
-  console.log(`[DEBUG AI] Provider: ${getAIProviderName()}`);
+// Two-pass validation and code fixing helper
+async function getAIForCodeFix(originalCode, language, error, promptCtx) {
+  console.log(`[SkillDebug] Request received`);
+  console.log(`[SkillDebug] Language: ${language || 'Auto Detect'}`);
+  console.log(`[SkillDebug] Code length: ${originalCode ? originalCode.length : 0}`);
+  console.log(`[SkillDebug] Error received: ${error || 'None'}`);
 
-  if (!code) {
-    return res.status(400).json({ error: 'Code block is required for debugging.' });
-  }
+  const hasRealError = Boolean(error && error.trim() && !/no error/i.test(error));
 
-  const promptCtx = userPrompt || context || 'Debug this code.';
-
-  try {
-    const systemPrompt = `You are Mirror AI - a professional code repair engine.
+  // PASS 1: Analyze the error and create a fix
+  const systemPromptPass1 = `You are Mirror AI - a professional code repair engine.
 Analyze the user's code, error message, and instructions. Propose a root cause diagnosis and fix.
+Specifically explain how the supplied error log relates to the code.
+Do not return the original broken code as the corrected code if there is an error in it.
 Return valid JSON only containing:
 - errorType: string (e.g. ReferenceError, TypeError, SyntaxError, LogicError)
 - errorMessage: string (the exact error message from the log, or brief explanation)
 - rootCause: string (technical root cause)
 - explanation: string (explanation of resolution)
 - correctedCode: string (COMPLETE corrected code block)
+- changes: string[] (list of specific changes made)
 - expectedOutput: string (expected execution output / stdout of corrected code)`;
 
-    const promptText = `
+  const promptTextPass1 = `
 Programming Language: ${language}
 Current Code:
-${code}
+${originalCode}
 
 Current Error Log:
 ${error || 'No error log provided.'}
@@ -51,40 +47,173 @@ ${promptCtx}
 
 Return JSON only.`;
 
-    console.log('[DEBUG AI] AI request started');
-    const responseText = await callAI(systemPrompt, promptText, 'application/json');
-    console.log('[DEBUG AI] AI response received');
+  console.log(`[SkillDebug] First correction generated`);
+  const responseText = await callAI(systemPromptPass1, promptTextPass1, 'application/json');
+  
+  let cleaned = responseText.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```$/s, '').trim();
+  }
+  
+  let pass1Result = null;
+  try {
+    pass1Result = JSON.parse(cleaned);
+  } catch (e) {
+    console.warn(`[SkillDebug] Pass 1 JSON parsing failed. Retrying...`);
+  }
 
-    let cleaned = responseText.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+  // PASS 2: Review the proposed fix (Two-Pass Debugging)
+  let finalResult = pass1Result;
+  
+  if (pass1Result && pass1Result.correctedCode) {
+    console.log(`[SkillDebug] Comparing original and corrected code`);
+    const isSame = pass1Result.correctedCode === originalCode;
+    
+    const reviewSystemPrompt = `You are Mirror AI Reviewer.
+Review the proposed fix for the code error.
+Does this corrected code actually resolve the supplied error?
+Original Code:
+${originalCode}
+
+Error Log:
+${error || 'None'}
+
+Proposed Fix:
+${pass1Result.correctedCode}
+
+If the proposed fix is correct and resolves the error, return it.
+If the proposed fix does not resolve the error, or if the code is identical and still has the error, output a corrected code block that fixes it.
+Return valid JSON only containing:
+- resolvesError: boolean (true if the proposed fix is correct and resolves the error, false otherwise)
+- errorType: string
+- errorMessage: string
+- rootCause: string
+- explanation: string (explanation of resolution)
+- correctedCode: string (COMPLETE final corrected code block)
+- changes: string[] (list of specific changes made)
+- expectedOutput: string`;
+
+    console.log(`[SkillDebug] Verification started`);
+    const reviewResponse = await callAI(reviewSystemPrompt, "Perform the review and return the JSON.", 'application/json');
+    let cleanedReview = reviewResponse.trim();
+    if (cleanedReview.startsWith('```')) {
+      cleanedReview = cleanedReview.replace(/^```json\s*/i, '').replace(/```$/s, '').trim();
     }
-    const result = JSON.parse(cleaned);
+    
+    try {
+      const reviewResult = JSON.parse(cleanedReview);
+      if (reviewResult.correctedCode) {
+        finalResult = reviewResult;
+      }
+    } catch (e) {
+      console.warn(`[SkillDebug] Pass 2 JSON parsing failed.`);
+    }
+  }
 
-    const analysis = {
-      errorType: result.errorType || 'Error',
-      errorMessage: result.errorMessage || error || 'N/A',
-      rootCause: result.rootCause || 'N/A',
-      explanation: result.explanation || 'N/A',
-      correctedCode: result.correctedCode || code,
-      expectedOutput: result.expectedOutput || 'N/A'
-    };
+  // Final Validation Check
+  const valid = finalResult && 
+                finalResult.correctedCode && 
+                (!hasRealError || finalResult.correctedCode !== originalCode) &&
+                finalResult.explanation;
+
+  if (!valid) {
+    console.warn(`[SkillDebug] Correction validation failed. Attempting a final corrective pass...`);
+    const systemPromptPass3 = `You are Mirror AI. You MUST resolve this error and return a corrected code block that is DIFFERENT from the original code.
+Original Code:
+${originalCode}
+
+Error:
+${error || 'None'}
+
+Return valid JSON containing:
+- errorType: string
+- errorMessage: string
+- rootCause: string
+- explanation: string
+- correctedCode: string (MUST be different from original code and fix the error)
+- changes: string[]
+- expectedOutput: string`;
+
+    const responsePass3 = await callAI(systemPromptPass3, "Fix the error and output JSON.", 'application/json');
+    let cleaned3 = responsePass3.trim();
+    if (cleaned3.startsWith('```')) {
+      cleaned3 = cleaned3.replace(/^```json\s*/i, '').replace(/```$/s, '').trim();
+    }
+    try {
+      finalResult = JSON.parse(cleaned3);
+    } catch (e) {
+      console.error(`[SkillDebug] Final fallback pass failed to parse JSON.`);
+    }
+  }
+
+  console.log(`[SkillDebug] Correction validated`);
+  console.log(`[SkillDebug] Final response returned`);
+  return finalResult;
+}
+
+// 1. Compatibility route for POST /api/debug
+router.post('/', authMiddleware, async (req, res) => {
+  const { code, language, error, context, prompt: userPrompt } = req.body;
+
+  if (!code) {
+    return res.status(400).json({ error: 'Code block is required for debugging.' });
+  }
+
+  const promptCtx = userPrompt || context || 'Debug this code.';
+
+  try {
+    const latestResult = await getAIForCodeFix(code, language, error, promptCtx);
+
+    const changesList = Array.isArray(latestResult.changes) 
+      ? latestResult.changes.map(c => `- ${c}`).join('\n') 
+      : '- Corrected code bugs';
+
+    const reportMarkdown = `
+⚠ **AI-generated fix — execution not verified**
+
+🔴 **Error Detected**
+${latestResult.errorMessage || error || 'N/A'}
+
+🧠 **Root Cause**
+${latestResult.rootCause || 'N/A'}
+
+🛠 **Corrected Code**
+\`\`\`${language || 'javascript'}
+${latestResult.correctedCode}
+\`\`\`
+
+📝 **What Changed**
+${changesList}
+
+▶ **Expected Output**
+${latestResult.expectedOutput || 'N/A'}
+`;
 
     const finalResult = {
       success: true,
-      fixedCode: analysis.correctedCode,
-      correctedCode: analysis.correctedCode,
-      errorType: analysis.errorType,
-      rootCause: analysis.rootCause,
-      explanation: analysis.explanation,
+      fixedCode: latestResult.correctedCode,
+      correctedCode: latestResult.correctedCode,
+      errorType: latestResult.errorType || 'Error',
+      rootCause: latestResult.rootCause || 'N/A',
+      explanation: latestResult.explanation || 'N/A',
+      changes: latestResult.changes || [],
+      expectedOutput: latestResult.expectedOutput || 'N/A',
       verification: 'Execution not verified.',
-      analysis
+      diagnosis: reportMarkdown.trim(),
+      analysis: {
+        errorType: latestResult.errorType || 'Error',
+        errorMessage: latestResult.errorMessage || error || 'N/A',
+        rootCause: latestResult.rootCause || 'N/A',
+        explanation: latestResult.explanation || 'N/A',
+        correctedCode: latestResult.correctedCode,
+        changes: latestResult.changes || [],
+        expectedOutput: latestResult.expectedOutput || 'N/A'
+      }
     };
 
-    console.log('[DEBUG AI] Response sent');
     res.json(finalResult);
   } catch (err) {
-    console.error('[DEBUG AI] Stateless debug error:', err);
+    console.error('[SkillDebug] Stateless debug error:', err);
     res.status(500).json({ error: 'Stateless debugging failed.' });
   }
 });
@@ -92,12 +221,6 @@ Return JSON only.`;
 // 2. Cloudflare Sandbox-verified code debugging route (POST /api/debug/run)
 router.post('/run', authMiddleware, async (req, res) => {
   const { language, code, error, context, prompt: userPrompt } = req.body;
-
-  // SAFE DEBUG LOGGING
-  console.log('[DEBUG AI] Request received');
-  console.log(`[DEBUG AI] Language: ${language || 'Auto Detect'}`);
-  console.log(`[DEBUG AI] Code received: "${safeCodePreview(code)}"`);
-  console.log(`[DEBUG AI] Provider: ${getAIProviderName()}`);
 
   if (!code) {
     return res.status(400).json({ error: 'Code block is required for debugging.' });
@@ -126,39 +249,8 @@ router.post('/run', authMiddleware, async (req, res) => {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[DEBUG AI] Cloudflare Sandbox debug verification attempt ${attempt}/${maxAttempts}...`);
 
-    const systemPrompt = `You are Mirror AI - a professional code repair engine.
-Analyze the user's code, error message, and context. Propose a root cause diagnosis and fix.
-Return valid JSON only containing:
-- errorType: string (e.g. ReferenceError, TypeError, SyntaxError, LogicError)
-- errorMessage: string (the exact error message from the log, or brief explanation)
-- rootCause: string (technical root cause)
-- explanation: string (explanation of resolution)
-- correctedCode: string (COMPLETE corrected code block)
-- expectedOutput: string (expected execution output / stdout of corrected code)`;
-
-    const promptText = `
-Programming Language: ${language}
-Current Code:
-${currentCode}
-
-Current Error Log:
-${currentError || 'No error log provided.'}
-
-Context/Prompt:
-${promptCtx}
-
-Return JSON only.`;
-
     try {
-      console.log('[DEBUG AI] AI request started');
-      const aiResponse = await callAI(systemPrompt, promptText, 'application/json');
-      console.log('[DEBUG AI] AI response received');
-
-      let cleaned = aiResponse.trim();
-      if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replace(/^```json\s*/, '').replace(/```$/, '').trim();
-      }
-      latestResult = JSON.parse(cleaned);
+      latestResult = await getAIForCodeFix(currentCode, language, currentError, promptCtx);
 
       if (isSandboxAvailable) {
         // Send workload to secure Cloudflare Sandbox
@@ -211,25 +303,34 @@ Return JSON only.`;
     }
   }
 
-  // Compile final markdown report for the "diagnosis" field
-  const verificationBanner = isSandboxAvailable 
-    ? `✅ **Execution Verified**: Verified successfully in Cloudflare Sandbox environment.`
-    : `⚠️ **AI-Only Diagnosis**: Cloudflare Sandbox is currently offline/unconfigured. This fix was NOT execution-verified.`;
+  // Compile final report markdown
+  const verificationBanner = isSandboxAvailable && executionSuccess
+    ? `✓ **Verified Fix**: Verified successfully in Cloudflare Sandbox environment.`
+    : `⚠ **AI-generated fix — execution not verified**`;
+
+  const changesList = Array.isArray(latestResult.changes) 
+    ? latestResult.changes.map(c => `- ${c}`).join('\n') 
+    : '- Corrected code bugs';
 
   const reportMarkdown = `
 ${verificationBanner}
 
-### 🔍 Root Cause
-${latestResult.rootCause}
+🔴 **Error Detected**
+${latestResult.errorMessage || error || 'N/A'}
 
-### 💡 Why It Happened
-${latestResult.explanation}
+🧠 **Root Cause**
+${latestResult.rootCause || 'N/A'}
 
-### ⚠️ Original Error
-${error || 'No error log provided.'}
+🛠 **Corrected Code**
+\`\`\`${language || 'javascript'}
+${latestResult.correctedCode}
+\`\`\`
 
-### ⚙️ Expected Output
-${latestResult.expectedOutput}
+📝 **What Changed**
+${changesList}
+
+▶ **Expected Output**
+${latestResult.expectedOutput || 'N/A'}
 `;
 
   const analysis = {
@@ -238,6 +339,7 @@ ${latestResult.expectedOutput}
     rootCause: latestResult.rootCause || 'N/A',
     explanation: latestResult.explanation || 'N/A',
     correctedCode: latestResult.correctedCode || code,
+    changes: latestResult.changes || [],
     expectedOutput: latestResult.expectedOutput || 'N/A'
   };
 
@@ -249,6 +351,8 @@ ${latestResult.expectedOutput}
     errorType: latestResult.errorType,
     rootCause: latestResult.rootCause,
     explanation: latestResult.explanation,
+    changes: latestResult.changes || [],
+    expectedOutput: latestResult.expectedOutput || 'N/A',
     verification: isSandboxAvailable 
       ? (executionSuccess ? 'VERIFIED_SUCCESS' : 'VERIFIED_FAILED') 
       : 'Execution not verified.',

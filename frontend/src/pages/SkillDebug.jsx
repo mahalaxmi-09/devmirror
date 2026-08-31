@@ -784,6 +784,23 @@ const SkillDebug = () => {
                         </p>
                       </div>
 
+                      {(instantResult.analysis?.changes || instantResult.changes) && (
+                        <div className="border-t border-border-default/50 pt-3.5 space-y-1">
+                          <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest flex items-center gap-1">
+                            📝 What Changed
+                          </span>
+                          <div className="text-xs leading-relaxed text-text-secondary pl-4 space-y-1 mt-1 select-text">
+                            {Array.isArray(instantResult.analysis?.changes || instantResult.changes) ? (
+                              (instantResult.analysis?.changes || instantResult.changes).map((change, idx) => (
+                                <div key={idx} className="list-item list-disc">{change}</div>
+                              ))
+                            ) : (
+                              <div>{instantResult.analysis?.changes || instantResult.changes}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {(instantResult.analysis?.expectedOutput || instantResult.expectedOutput) && (
                         <div className="border-t border-border-default/50 pt-3.5 space-y-1">
                           <span className="text-[10px] font-mono text-brand-primary uppercase font-bold tracking-widest flex items-center gap-1">
@@ -796,23 +813,36 @@ const SkillDebug = () => {
                       )}
                     </div>
 
-                    {/* Fixed Code Blocks */}
-                    <div className="bg-[#050705] border border-border-default rounded-xl overflow-hidden">
-                      <div className="bg-panel-default px-4 py-2 border-b border-border-default flex justify-between items-center text-xs font-mono select-none">
-                        <span className="text-text-secondary font-bold font-mono">🛠 Corrected Code</span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                          }}
-                          className="px-2.5 py-1 border border-border-default bg-bg-secondary hover:border-brand-primary text-text-secondary hover:text-brand-primary transition-all rounded text-[10px] font-bold"
-                        >
-                          {copied ? '✓ Copied' : 'Copy Code'}
-                        </button>
+                    {/* Fixed Code Blocks (Before/After View) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Before Code Block */}
+                      <div className="bg-[#0b0c0b] border border-red-500/20 rounded-xl overflow-hidden">
+                        <div className="bg-panel-default px-4 py-2 border-b border-border-default flex justify-between items-center text-xs font-mono select-none">
+                          <span className="text-red-400 font-bold font-mono">Original Code (Before)</span>
+                        </div>
+                        <div className="p-4 overflow-y-auto max-h-[250px] text-left font-mono text-[11px] leading-relaxed text-text-secondary select-text">
+                          <pre>{instantCode}</pre>
+                        </div>
                       </div>
-                      <div className="p-4 overflow-y-auto max-h-[300px] text-left font-mono text-[11px] leading-relaxed text-[#F4F7F2] select-text">
-                        <pre>{instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode}</pre>
+
+                      {/* After Code Block */}
+                      <div className="bg-[#050705] border border-brand-primary/20 rounded-xl overflow-hidden">
+                        <div className="bg-panel-default px-4 py-2 border-b border-border-default flex justify-between items-center text-xs font-mono select-none">
+                          <span className="text-brand-accent font-bold font-mono">Corrected Code (After)</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            }}
+                            className="px-2.5 py-1 border border-border-default bg-bg-secondary hover:border-brand-primary text-text-secondary hover:text-brand-primary transition-all rounded text-[10px] font-bold"
+                          >
+                            {copied ? '✓ Copied' : 'Copy Code'}
+                          </button>
+                        </div>
+                        <div className="p-4 overflow-y-auto max-h-[250px] text-left font-mono text-[11px] leading-relaxed text-[#F4F7F2] select-text">
+                          <pre>{instantResult.analysis?.correctedCode || instantResult.correctedCode || instantResult.fixedCode}</pre>
+                        </div>
                       </div>
                     </div>
                   </div>

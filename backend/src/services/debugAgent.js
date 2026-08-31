@@ -280,6 +280,23 @@ export async function runDebugAgent(missionId) {
       };
     }
 
+    if (lastPatch) {
+      await persistPatchedFiles(missionId);
+      await setMissionStatus(missionId, 'PATCH_GENERATED');
+      await recordEvent(missionId, 'patch_generated_unverified', 'AI-generated fix — execution not verified.', { provider: provider.name, model: provider.model });
+      return {
+        success: true,
+        status: 'PATCH_GENERATED',
+        provider: provider.name,
+        model: provider.model,
+        message: lastMessage || 'AI-generated fix — execution not verified.',
+        patch: lastPatch,
+        execution: last,
+        toolHistory: context.toolHistory,
+        unverified: true
+      };
+    }
+
     await setMissionStatus(missionId, MISSION_STATUS.FAILED);
     await recordEvent(missionId, 'verification_failed', 'UNABLE TO VERIFY', { level: 'error' });
     return {
