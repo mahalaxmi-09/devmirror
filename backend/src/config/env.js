@@ -54,12 +54,12 @@ export function getGeminiKeyStatus() {
 }
 
 export function getGeminiModel() {
-  return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  return process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 }
 
 export function getGeminiModelCandidates() {
   const primary = getGeminiModel();
-  const extras = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+  const extras = ['gemini-flash-lite-latest', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
   return [primary, ...extras.filter((m) => m !== primary)];
 }
 
