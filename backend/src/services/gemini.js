@@ -14,16 +14,59 @@ const getOpenAI = () => {
 };
 
 export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain') => {
-  // Priority 1: Groq
+  // Priority 1: Gemini (Ultra-fast, sub-second latency)
+  const { getGeminiApiKey } = await import('../config/env.js');
+  const geminiKey = getGeminiApiKey();
+  if (geminiKey) {
+    try {
+      if (mimeType === 'application/json') {
+        const res = await generateJson(prompt, systemInstruction);
+        return typeof res === 'object' ? JSON.stringify(res) : res;
+      } else {
+        const { getGeminiClient, getGeminiModel } = await import('./geminiClient.js');
+        const ai = getGeminiClient();
+        if (ai) {
+          const response = await ai.models.generateContent({
+            model: getGeminiModel(),
+            contents: prompt,
+            config: { systemInstruction }
+          });
+          return response.text;
+        }
+      }
+    } catch (err) {
+      console.error('Gemini call failed. Falling back to OpenAI...', err.message);
+    }
+  }
+
+  // Priority 2: OpenAI (High-speed gpt-4o-mini fallback)
+  const openai = getOpenAI();
+  if (openai) {
+    try {
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ],
+        response_format: mimeType === 'application/json' ? { type: 'json_object' } : undefined
+      });
+      return response.choices[0].message.content;
+    } catch (err) {
+      console.error('OpenAI call failed. Falling back to Groq...', err.message);
+    }
+  }
+
+  // Priority 3: Groq (If configured)
   const groqKey = getGroqApiKey();
   if (groqKey) {
     try {
-      console.log('Routing request to Groq...');
       const groqClient = new OpenAI({
         apiKey: groqKey,
         baseURL: 'https://api.groq.com/openai/v1'
       });
-      const groqModel = getGroqModel() || 'groq/compound';
+      const groqModel = getGroqModel() || 'llama-3.1-8b-instant';
       const response = await groqClient.chat.completions.create({
         model: groqModel,
         messages: [
@@ -35,45 +78,11 @@ export const callAI = async (systemInstruction, prompt, mimeType = 'text/plain')
       });
       return response.choices[0].message.content;
     } catch (err) {
-      console.error('Groq call failed. Falling back to next provider...', err.message);
+      console.error('Groq call failed.', err.message);
     }
   }
 
-  // Priority 2: OpenAI (If configured)
-  const openai = getOpenAI();
-  if (openai) {
-    try {
-      console.log('Routing request to OpenAI gpt-4o...');
-      const response = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: prompt }
-        ],
-        response_format: mimeType === 'application/json' ? { type: 'json_object' } : undefined
-      });
-      return response.choices[0].message.content;
-    } catch (err) {
-      console.error('OpenAI call failed. Falling back to Gemini...', err.message);
-    }
-  }
-
-  // Priority 3: Gemini (Default / Fallback)
-  console.log('Routing request to Gemini...');
-  if (mimeType === 'application/json') {
-    const res = await generateJson(prompt, systemInstruction);
-    return typeof res === 'object' ? JSON.stringify(res) : res;
-  } else {
-    const { getGeminiClient, getGeminiModel } = await import('./geminiClient.js');
-    const ai = getGeminiClient();
-    if (!ai) throw new Error('AI providers unavailable.');
-    const response = await ai.models.generateContent({
-      model: getGeminiModel(),
-      contents: prompt,
-      config: { systemInstruction }
-    });
-    return response.text;
-  }
+  throw new Error('All AI providers failed or unavailable.');
 };
 
 export const analyzeBug = async () => {

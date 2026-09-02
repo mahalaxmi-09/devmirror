@@ -58,7 +58,9 @@ export class GeminiProvider extends AIProvider {
         const msg = String(err.message || '');
         const retryable = /not found|NOT_FOUND|invalid argument|UNAVAILABLE|high demand|503|404|overloaded|429|quota|rate limit/i.test(msg);
         if (!retryable) break;
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!/404|not found|NOT_FOUND|invalid argument/i.test(msg)) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
     }
     throw new AIProviderError(sanitizeProviderError(lastError?.message || 'AI_PROVIDER_ERROR'), { provider: 'gemini' });

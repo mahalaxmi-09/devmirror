@@ -68,7 +68,7 @@ export function getOpenAIApiKey() {
 }
 
 export function getOpenAIModel() {
-  return process.env.OPENAI_MODEL || 'gpt-4o';
+  return process.env.OPENAI_MODEL || 'gpt-4o-mini';
 }
 
 export function getAnthropicApiKey() {
